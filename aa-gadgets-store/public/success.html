@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Order confirmed — A&amp;A Gadgets</title>
+<link rel="icon" href="/images/logo.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="container">
+    <a href="/" class="brand">
+      <img src="/images/logo.png" alt="A&A Gadgets logo">
+    </a>
+  </div>
+</header>
+
+<main class="container status-page" id="statusPage">
+  <p style="color:var(--muted)">Confirming your order…</p>
+</main>
+
+<script src="/js/cart.js"></script>
+<script>
+  async function init() {
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get('session_id');
+    const page = document.getElementById('statusPage');
+
+    if (!sessionId) {
+      page.innerHTML = `
+        <div class="icon-circle">✕</div>
+        <h1>No order found</h1>
+        <p>We couldn't find an order to confirm.</p>
+        <a href="/" class="btn">Back to shop</a>`;
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/order-status/${sessionId}`);
+      const order = await res.json();
+      clearCart();
+
+      if (order.status === 'paid') {
+        page.innerHTML = `
+          <div class="icon-circle">✓</div>
+          <h1>Thank you — order confirmed</h1>
+          <p>A confirmation has been recorded for order <strong>${order.id.slice(0, 18)}…</strong>. Total charged: $${order.total.toFixed(2)}.</p>
+          <a href="/" class="btn">Continue shopping</a>`;
+      } else {
+        page.innerHTML = `
+          <div class="icon-circle">…</div>
+          <h1>Order received</h1>
+          <p>Your order is being processed. If payment doesn't confirm shortly, please contact support.</p>
+          <a href="/" class="btn">Continue shopping</a>`;
+      }
+    } catch (e) {
+      page.innerHTML = `<p>Something went wrong confirming your order.</p><a href="/" class="btn">Back to shop</a>`;
+    }
+  }
+  init();
+</script>
+</body>
+</html>

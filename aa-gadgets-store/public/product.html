@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A&amp;A Gadgets — Product</title>
+<link rel="icon" href="/images/logo.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="container">
+    <a href="/" class="brand">
+      <img src="/images/logo.png" alt="A&A Gadgets logo">
+    </a>
+    <nav class="main-nav">
+      <a href="/#featured">Featured</a>
+      <a href="/#shop">Shop</a>
+      <a href="/#about">About</a>
+    </nav>
+    <div class="header-actions">
+      <a href="/cart.html" class="icon-btn" aria-label="Cart">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3h2l2.4 12.4a2 2 0 0 0 2 1.6h7.2a2 2 0 0 0 2-1.6L21 8H6"/><circle cx="10" cy="21" r="1"/><circle cx="17" cy="21" r="1"/></svg>
+        <span class="cart-count" id="cartCount" style="display:none">0</span>
+      </a>
+    </div>
+  </div>
+</header>
+
+<main class="container">
+  <div id="productDetail" class="product-detail">
+    <p style="color:var(--muted)">Loading product…</p>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-bottom">
+      <span>© 2026 A&amp;A Gadgets</span>
+      <a href="/">Back to shop</a>
+    </div>
+  </div>
+</footer>
+
+<script src="/js/cart.js"></script>
+<script>
+  let currentProduct = null;
+  let currentQty = 1;
+
+  async function loadProduct() {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('id');
+    const container = document.getElementById('productDetail');
+    if (!id) {
+      container.innerHTML = '<p>No product specified.</p>';
+      return;
+    }
+    const res = await fetch(`/api/products/${id}`);
+    if (!res.ok) {
+      container.innerHTML = '<div class="empty-state">This product could not be found. <br><a href="/" class="btn btn-outline" style="margin-top:16px;">Return to shop</a></div>';
+      return;
+    }
+    currentProduct = await res.json();
+    render();
+  }
+
+  function render() {
+    const p = currentProduct;
+    const outOfStock = p.stock <= 0;
+    document.title = `${p.name} — A&A Gadgets`;
+    document.getElementById('productDetail').innerHTML = `
+      <div class="product-thumb">
+        <img src="${p.image}" alt="${p.name}">
+      </div>
+      <div class="pd-info">
+        <span class="eyebrow">${p.category}</span>
+        <h1>${p.name}</h1>
+        <div class="pd-price">$${p.price.toFixed(2)}</div>
+        <p class="pd-desc">${p.description || ''}</p>
+        ${outOfStock ? '<p style="color:var(--danger);font-weight:600;margin-bottom:20px;">Currently sold out</p>' : `<p style="color:var(--muted);font-size:13px;margin-bottom:20px;">${p.stock} in stock</p>`}
+        <div class="qty-row">
+          <div class="qty-control">
+            <button onclick="changeQty(-1)" aria-label="Decrease quantity">−</button>
+            <span id="qtyValue">${currentQty}</span>
+            <button onclick="changeQty(1)" aria-label="Increase quantity">+</button>
+          </div>
+        </div>
+        <button class="btn btn-block" ${outOfStock ? 'disabled' : ''} onclick="addToCart(currentProduct.id, currentQty); currentQty=1; document.getElementById('qtyValue').textContent=1;">
+          ${outOfStock ? 'Unavailable' : 'Add to cart'}
+        </button>
+      </div>
+    `;
+  }
+
+  function changeQty(delta) {
+    currentQty = Math.max(1, Math.min(currentProduct.stock || 1, currentQty + delta));
+    document.getElementById('qtyValue').textContent = currentQty;
+  }
+
+  loadProduct();
+</script>
+</body>
+</html>

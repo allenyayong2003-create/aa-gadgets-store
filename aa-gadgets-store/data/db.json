@@ -1,0 +1,71 @@
+{
+  "products": [
+    {
+      "id": "p1",
+      "name": "Aria Wireless Earbuds",
+      "category": "Audio",
+      "price": 79.99,
+      "stock": 24,
+      "description": "True wireless earbuds with active noise cancellation and 30-hour battery life.",
+      "image": "/images/products/placeholder-1.svg",
+      "featured": true,
+      "createdAt": "2026-08-01T00:00:00.000Z"
+    },
+    {
+      "id": "p2",
+      "name": "Pulse Smartwatch",
+      "category": "Wearables",
+      "price": 149,
+      "stock": 15,
+      "description": "Track your workouts, heart rate, and sleep with a week-long battery life.",
+      "image": "/images/products/placeholder-2.svg",
+      "featured": true,
+      "createdAt": "2026-08-01T00:00:00.000Z"
+    },
+    {
+      "id": "p3",
+      "name": "Slate 14 Ultrabook",
+      "category": "Computers",
+      "price": 1099,
+      "stock": 8,
+      "description": "Featherlight aluminum laptop with all-day battery and a crisp 14-inch display.",
+      "image": "/images/products/placeholder-3.svg",
+      "featured": true,
+      "createdAt": "2026-08-01T00:00:00.000Z"
+    },
+    {
+      "id": "p4",
+      "name": "Halo Phone Case",
+      "category": "Accessories",
+      "price": 24.99,
+      "stock": 60,
+      "description": "Drop-tested silicone case with a soft-touch finish and raised camera bezel.",
+      "image": "/images/products/placeholder-4.svg",
+      "featured": false,
+      "createdAt": "2026-08-01T00:00:00.000Z"
+    },
+    {
+      "id": "p5",
+      "name": "Nova Fast Charger 65W",
+      "category": "Accessories",
+      "price": 34.99,
+      "stock": 40,
+      "description": "Compact GaN charger that fits in a pocket and charges a laptop and phone at once.",
+      "image": "/images/products/placeholder-5.svg",
+      "featured": false,
+      "createdAt": "2026-08-01T00:00:00.000Z"
+    },
+    {
+      "id": "p6",
+      "name": "Orbit Bluetooth Speaker",
+      "category": "Audio",
+      "price": 59.99,
+      "stock": 20,
+      "description": "Pocket-sized speaker with 360-degree sound and IP67 water resistance.",
+      "image": "/images/products/placeholder-6.svg",
+      "featured": false,
+      "createdAt": "2026-08-01T00:00:00.000Z"
+    }
+  ],
+  "orders": []
+}
