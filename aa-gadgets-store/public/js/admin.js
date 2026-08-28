@@ -1,4 +1,15 @@
 let ADMIN_PRODUCTS = [];
+let ADMIN_CURRENCY = 'usd';
+
+async function loadCurrency() {
+  try {
+    const res = await fetch('/api/config');
+    const config = await res.json();
+    ADMIN_CURRENCY = config.currency || 'usd';
+  } catch (e) {
+    ADMIN_CURRENCY = 'usd';
+  }
+}
 
 // ---------- Boot ----------
 async function boot() {
@@ -16,9 +27,10 @@ function showLogin() {
   document.getElementById('adminShell').style.display = 'none';
 }
 
-function showDashboard() {
+async function showDashboard() {
   document.getElementById('loginShell').style.display = 'none';
   document.getElementById('adminShell').style.display = 'flex';
+  await loadCurrency();
   loadProducts();
 }
 
@@ -74,7 +86,7 @@ function renderStats() {
   const lowStock = ADMIN_PRODUCTS.filter((p) => p.stock <= 5).length;
   document.getElementById('statLowStock').textContent = lowStock;
   const value = ADMIN_PRODUCTS.reduce((sum, p) => sum + p.price * p.stock, 0);
-  document.getElementById('statValue').textContent = `$${value.toFixed(2)}`;
+  document.getElementById('statValue').textContent = formatMoney(value, ADMIN_CURRENCY);
 }
 
 function renderProductTable() {
@@ -88,7 +100,7 @@ function renderProductTable() {
       <td><img class="admin-thumb" src="${p.image}" alt="${escapeAttr(p.name)}"></td>
       <td>${escapeAttr(p.name)}</td>
       <td>${escapeAttr(p.category)}</td>
-      <td>$${p.price.toFixed(2)}</td>
+      <td>${formatMoney(p.price, ADMIN_CURRENCY)}</td>
       <td>
         ${p.stock === 0
           ? '<span class="badge badge-low">Out</span>'
@@ -200,23 +212,34 @@ async function loadOrders() {
   const res = await fetch('/api/admin/orders');
   const body = document.getElementById('orderTableBody');
   if (!res.ok) {
-    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px;">Could not load orders.</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">Could not load orders.</td></tr>';
     return;
   }
   const orders = await res.json();
   if (orders.length === 0) {
-    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px;">No orders yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">No orders yet.</td></tr>';
     return;
   }
-  body.innerHTML = orders.map((o) => `
+  body.innerHTML = orders.map((o) => {
+    const isCod = o.paymentMethod === 'cod';
+    const customer = o.customer
+      ? `${escapeAttr(o.customer.name)}<br><span style="color:var(--muted);font-size:12px;">${escapeAttr(o.customer.phone)}<br>${escapeAttr(o.customer.address)}</span>`
+      : '—';
+    const statusBadge = isCod
+      ? '<span class="badge badge-pending">Pay on delivery</span>'
+      : `<span class="badge ${o.status === 'paid' ? 'badge-ok' : 'badge-pending'}">${o.status}</span>`;
+    return `
     <tr>
       <td>${o.id.slice(0, 16)}…</td>
-      <td>${o.items.map((i) => `${i.name} ×${i.quantity}`).join(', ')}</td>
-      <td>$${o.total.toFixed(2)}</td>
-      <td><span class="badge ${o.status === 'paid' ? 'badge-ok' : 'badge-pending'}">${o.status}</span></td>
+      <td>${o.items.map((i) => `${escapeAttr(i.name)} ×${i.quantity}`).join(', ')}</td>
+      <td>${formatMoney(o.total, ADMIN_CURRENCY)}</td>
+      <td>${isCod ? 'Cash on Delivery' : 'Card'}</td>
+      <td>${customer}</td>
+      <td>${statusBadge}</td>
       <td>${new Date(o.createdAt).toLocaleString()}</td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 }
 
 boot();
