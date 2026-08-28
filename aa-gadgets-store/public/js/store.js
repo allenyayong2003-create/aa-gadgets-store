@@ -1,10 +1,16 @@
 // Renders the homepage: featured grid, full catalog grid, and category filters
 let ALL_PRODUCTS = [];
 let ACTIVE_CATEGORY = 'All';
+let SITE_CURRENCY = 'usd';
 
 async function loadProducts() {
-  const res = await fetch('/api/products');
-  ALL_PRODUCTS = await res.json();
+  const [productsRes, configRes] = await Promise.all([
+    fetch('/api/products'),
+    fetch('/api/config')
+  ]);
+  ALL_PRODUCTS = await productsRes.json();
+  const config = await configRes.json();
+  SITE_CURRENCY = config.currency || 'usd';
   renderFeatured();
   renderFilters();
   renderGrid();
@@ -22,7 +28,7 @@ function productCardHTML(p) {
       </a>
       <span class="product-category">${escapeHTML(p.category)}</span>
       <a href="/product.html?id=${p.id}"><div class="product-name">${escapeHTML(p.name)}</div></a>
-      <div class="product-price">${formatMoney(p.price)}</div>
+      <div class="product-price">${formatMoney(p.price, SITE_CURRENCY)}</div>
       <button class="btn btn-outline" ${outOfStock ? 'disabled' : ''} onclick="addToCart('${p.id}');event.stopPropagation();">
         ${outOfStock ? 'Unavailable' : 'Add to cart'}
       </button>
