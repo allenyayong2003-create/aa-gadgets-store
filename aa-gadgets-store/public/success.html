@@ -25,10 +25,10 @@
 <script>
   async function init() {
     const params = new URLSearchParams(window.location.search);
-    const sessionId = params.get('session_id');
+    const orderId = params.get('order_id') || params.get('session_id');
     const page = document.getElementById('statusPage');
 
-    if (!sessionId) {
+    if (!orderId) {
       page.innerHTML = `
         <div class="icon-circle">✕</div>
         <h1>No order found</h1>
@@ -38,15 +38,25 @@
     }
 
     try {
-      const res = await fetch(`/api/order-status/${sessionId}`);
+      const [res, configRes] = await Promise.all([
+        fetch(`/api/order-status/${orderId}`),
+        fetch('/api/config')
+      ]);
       const order = await res.json();
+      const config = await configRes.json().catch(() => ({}));
       clearCart();
 
-      if (order.status === 'paid') {
+      if (order.paymentMethod === 'cod') {
+        page.innerHTML = `
+          <div class="icon-circle">✓</div>
+          <h1>Order placed — pay on delivery</h1>
+          <p>Thanks${order.customer && order.customer.name ? ', ' + order.customer.name : ''}! Your order <strong>${order.id.slice(0, 18)}…</strong> is confirmed. Please have ${formatMoney(order.total, config.currency || 'php')} ready in cash when it arrives.</p>
+          <a href="/" class="btn">Continue shopping</a>`;
+      } else if (order.status === 'paid') {
         page.innerHTML = `
           <div class="icon-circle">✓</div>
           <h1>Thank you — order confirmed</h1>
-          <p>A confirmation has been recorded for order <strong>${order.id.slice(0, 18)}…</strong>. Total charged: $${order.total.toFixed(2)}.</p>
+          <p>A confirmation has been recorded for order <strong>${order.id.slice(0, 18)}…</strong>. Total charged: ${formatMoney(order.total, config.currency || 'php')}.</p>
           <a href="/" class="btn">Continue shopping</a>`;
       } else {
         page.innerHTML = `
