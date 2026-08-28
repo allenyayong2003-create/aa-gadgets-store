@@ -42,7 +42,8 @@
 <script src="/js/cart.js"></script>
 <script>
   let productsById = {};
-  let siteConfig = { stripeConfigured: false, currency: 'usd' };
+  let siteConfig = { stripeConfigured: false, currency: 'php', codEnabled: true };
+  let paymentMethod = 'cod';
 
   async function init() {
     const [productsRes, configRes] = await Promise.all([
@@ -52,6 +53,7 @@
     const products = await productsRes.json();
     siteConfig = await configRes.json();
     productsById = Object.fromEntries(products.map((p) => [p.id, p]));
+    paymentMethod = siteConfig.stripeConfigured ? 'card' : 'cod';
     render();
   }
 
@@ -100,11 +102,46 @@
           <div class="summary-row"><span>Subtotal</span><span>${formatMoney(subtotal, siteConfig.currency)}</span></div>
           <div class="summary-row"><span>Shipping</span><span>Calculated at checkout</span></div>
           <div class="summary-row total"><span>Total</span><span>${formatMoney(subtotal, siteConfig.currency)}</span></div>
-          <button class="btn btn-block" style="margin-top:20px;" id="checkoutBtn" onclick="checkout()">Checkout securely</button>
-          ${!siteConfig.stripeConfigured ? '<div class="notice">Payments aren\'t connected yet. The store owner needs to add a Stripe key in <code>.env</code> before checkout can process real payments.</div>' : ''}
+
+          <div style="margin-top:24px;">
+            <div class="field">
+              <label>Payment method</label>
+            </div>
+            <div class="filters" style="margin-top:8px;">
+              <button type="button" class="chip ${paymentMethod === 'cod' ? 'active' : ''}" onclick="setPaymentMethod('cod')">Cash on Delivery</button>
+              <button type="button" class="chip ${paymentMethod === 'card' ? 'active' : ''}" onclick="setPaymentMethod('card')" ${!siteConfig.stripeConfigured ? 'disabled title="Card payments are not connected yet"' : ''}>Pay by Card</button>
+            </div>
+          </div>
+
+          <div id="codFields" style="margin-top:20px; ${paymentMethod === 'cod' ? '' : 'display:none;'}">
+            <div class="field" style="margin-bottom:14px;">
+              <label for="codName">Full name</label>
+              <input type="text" id="codName" placeholder="Juan Dela Cruz">
+            </div>
+            <div class="field" style="margin-bottom:14px;">
+              <label for="codPhone">Phone number</label>
+              <input type="text" id="codPhone" placeholder="09XX XXX XXXX">
+            </div>
+            <div class="field">
+              <label for="codAddress">Delivery address</label>
+              <textarea id="codAddress" placeholder="House/unit no., street, barangay, city, province"></textarea>
+            </div>
+          </div>
+
+          <button class="btn btn-block" style="margin-top:20px;" id="checkoutBtn" onclick="checkout()">
+            ${paymentMethod === 'cod' ? 'Place order (Cash on Delivery)' : 'Checkout securely'}
+          </button>
+          <p class="error-text" id="checkoutError">Something went wrong.</p>
+          ${!siteConfig.stripeConfigured ? '<div class="notice">Card payments aren\'t connected yet, but Cash on Delivery is ready to use.</div>' : ''}
         </div>
       </div>
     `;
+  }
+
+  function setPaymentMethod(method) {
+    if (method === 'card' && !siteConfig.stripeConfigured) return;
+    paymentMethod = method;
+    render();
   }
 
   function updateQty(id, qty) {
@@ -118,6 +155,48 @@
     if (items.length === 0) return;
 
     const btn = document.getElementById('checkoutBtn');
+    const errorEl = document.getElementById('checkoutError');
+    errorEl.style.display = 'none';
+
+    if (paymentMethod === 'cod') {
+      const name = document.getElementById('codName').value.trim();
+      const phone = document.getElementById('codPhone').value.trim();
+      const address = document.getElementById('codAddress').value.trim();
+
+      if (!name || !phone || !address) {
+        errorEl.textContent = 'Please fill in your name, phone number, and delivery address.';
+        errorEl.style.display = 'block';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Placing your order…';
+
+      try {
+        const res = await fetch('/api/checkout/cod', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items, customer: { name, phone, address } })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          errorEl.textContent = data.error || 'Could not place order';
+          errorEl.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = 'Place order (Cash on Delivery)';
+          return;
+        }
+        window.location.href = `/success.html?order_id=${data.orderId}`;
+      } catch (err) {
+        errorEl.textContent = 'Network error — please try again';
+        errorEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Place order (Cash on Delivery)';
+      }
+      return;
+    }
+
+    // Card payment via Stripe
     btn.disabled = true;
     btn.textContent = 'Redirecting to secure checkout…';
 
@@ -129,14 +208,16 @@
       });
       const data = await res.json();
       if (!res.ok) {
-        showToast(data.error || 'Could not start checkout');
+        errorEl.textContent = data.error || 'Could not start checkout';
+        errorEl.style.display = 'block';
         btn.disabled = false;
         btn.textContent = 'Checkout securely';
         return;
       }
       window.location.href = data.url;
     } catch (err) {
-      showToast('Network error — please try again');
+      errorEl.textContent = 'Network error — please try again';
+      errorEl.style.display = 'block';
       btn.disabled = false;
       btn.textContent = 'Checkout securely';
     }
