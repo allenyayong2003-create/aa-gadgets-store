@@ -14,7 +14,7 @@ const PORT = process.env.PORT || 3000;
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change-this-password';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';
-const CURRENCY = (process.env.CURRENCY || 'usd').toLowerCase();
+const CURRENCY = (process.env.CURRENCY || 'php').toLowerCase();
 const SITE_URL = process.env.SITE_URL || `http://localhost:${PORT}`;
 
 let stripe = null;
@@ -220,6 +220,7 @@ app.post('/api/checkout', async (req, res) => {
       items: orderItems,
       total: Math.round(total * 100) / 100,
       status: 'pending',
+      paymentMethod: 'card',
       createdAt: new Date().toISOString()
     };
     db.get('orders').push(order).write();
@@ -231,16 +232,67 @@ app.post('/api/checkout', async (req, res) => {
   }
 });
 
+// ---------- Checkout (Cash on Delivery) ----------
+app.post('/api/checkout/cod', (req, res) => {
+  try {
+    const { items, customer } = req.body; // items: [{id, quantity}], customer: {name, phone, address}
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Cart is empty' });
+    }
+    if (!customer || !customer.name || !customer.phone || !customer.address) {
+      return res.status(400).json({ error: 'Name, phone, and delivery address are required for Cash on Delivery' });
+    }
+
+    const products = db.get('products').value();
+    let total = 0;
+    const orderItems = [];
+
+    for (const item of items) {
+      const product = products.find((p) => p.id === item.id);
+      if (!product) continue;
+      const quantity = Math.max(1, parseInt(item.quantity, 10) || 1);
+      total += product.price * quantity;
+      orderItems.push({ id: product.id, name: product.name, price: product.price, quantity });
+    }
+
+    if (orderItems.length === 0) {
+      return res.status(400).json({ error: 'No valid items in cart' });
+    }
+
+    const orderId = 'cod_' + crypto.randomBytes(8).toString('hex');
+    const order = {
+      id: orderId,
+      items: orderItems,
+      total: Math.round(total * 100) / 100,
+      status: 'pending',
+      paymentMethod: 'cod',
+      customer: {
+        name: customer.name.trim(),
+        phone: customer.phone.trim(),
+        address: customer.address.trim()
+      },
+      createdAt: new Date().toISOString()
+    };
+    db.get('orders').push(order).write();
+
+    res.json({ orderId });
+  } catch (err) {
+    console.error('COD checkout error:', err);
+    res.status(500).json({ error: 'Something went wrong placing this order' });
+  }
+});
+
 // Mark order as paid once Stripe redirects back to success.html
-app.get('/api/order-status/:sessionId', async (req, res) => {
-  const order = db.get('orders').find({ id: req.params.sessionId }).value();
+app.get('/api/order-status/:orderId', async (req, res) => {
+  const order = db.get('orders').find({ id: req.params.orderId }).value();
   if (!order) return res.status(404).json({ error: 'Order not found' });
 
-  if (stripe && order.status !== 'paid') {
+  if (stripe && order.paymentMethod !== 'cod' && order.status !== 'paid') {
     try {
-      const session = await stripe.checkout.sessions.retrieve(req.params.sessionId);
+      const session = await stripe.checkout.sessions.retrieve(req.params.orderId);
       if (session.payment_status === 'paid') {
-        db.get('orders').find({ id: req.params.sessionId }).assign({ status: 'paid' }).write();
+        db.get('orders').find({ id: req.params.orderId }).assign({ status: 'paid' }).write();
         order.status = 'paid';
       }
     } catch (e) {
@@ -251,7 +303,7 @@ app.get('/api/order-status/:sessionId', async (req, res) => {
 });
 
 app.get('/api/config', (req, res) => {
-  res.json({ stripeConfigured: !!stripe, currency: CURRENCY });
+  res.json({ stripeConfigured: !!stripe, currency: CURRENCY, codEnabled: true });
 });
 
 app.listen(PORT, () => {
