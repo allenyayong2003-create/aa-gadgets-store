@@ -36,15 +36,25 @@ if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
     secure: process.env.SMTP_PORT === '465',
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
   });
+  console.log(`[email] SMTP configured — will send from ${process.env.SMTP_FROM || process.env.SMTP_USER} via ${process.env.SMTP_HOST}`);
+} else {
+  console.log('[email] SMTP not configured — order status emails are disabled (this is fine, Track My Order still works).');
 }
 
 async function notifyCustomerByEmail(order) {
-  if (!mailTransport) return;
+  if (!mailTransport) {
+    console.log('[email] Skipped: SMTP is not configured.');
+    return;
+  }
   const email = order.customer && order.customer.email;
-  if (!email) return;
+  if (!email) {
+    console.log(`[email] Skipped: order ${order.id} has no customer email on file.`);
+    return;
+  }
   const itemsList = order.items.map((i) => `${i.name} x${i.quantity}`).join(', ');
+  console.log(`[email] Attempting to send status email for order ${order.id} to ${email}...`);
   try {
-    await mailTransport.sendMail({
+    const info = await mailTransport.sendMail({
       from: process.env.SMTP_FROM || process.env.SMTP_USER,
       to: email,
       subject: `Your A&A Gadgets order is now: ${order.fulfillmentStatus}`,
@@ -56,8 +66,9 @@ async function notifyCustomerByEmail(order) {
         `\nYou can check your order anytime at ${SITE_URL}/track-order.html\n\n` +
         `Thanks for shopping with A&A Gadgets!`
     });
+    console.log(`[email] Sent successfully to ${email}. Message ID: ${info.messageId}`);
   } catch (e) {
-    console.error('Email notify failed:', e.message);
+    console.error(`[email] FAILED to send to ${email}:`, e.message);
   }
 }
 
@@ -415,9 +426,15 @@ app.patch('/api/admin/orders/:id/status', requireAdmin, async (req, res) => {
     return res.status(400).json({ error: 'Invalid status' });
   }
 
+  // Capture this before any writes — lowdb returns a live reference to the
+  // stored object, so reading order.fulfillmentStatus AFTER the update below
+  // would incorrectly show the new value instead of the old one.
+  const previousStatus = order.fulfillmentStatus;
+  const statusIsChanging = !!(status && status !== previousStatus);
+
   const updates = {};
   if (trackingNumber !== undefined) updates.trackingNumber = trackingNumber;
-  if (status && status !== order.fulfillmentStatus) {
+  if (statusIsChanging) {
     updates.fulfillmentStatus = status;
     updates.statusHistory = [...(order.statusHistory || []), { status, at: new Date().toISOString() }];
   }
@@ -425,8 +442,8 @@ app.patch('/api/admin/orders/:id/status', requireAdmin, async (req, res) => {
   db.get('orders').find({ id: req.params.id }).assign(updates).write();
   const updated = db.get('orders').find({ id: req.params.id }).value();
 
-  if (status && status !== order.fulfillmentStatus) {
-    notifyCustomerByEmail(updated).catch(() => {});
+  if (statusIsChanging) {
+    notifyCustomerByEmail(updated).catch((e) => console.error('[email] notify promise rejected:', e && e.message));
   }
 
   res.json(updated);
