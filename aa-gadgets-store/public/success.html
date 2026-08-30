@@ -50,14 +50,22 @@
         page.innerHTML = `
           <div class="icon-circle">✓</div>
           <h1>Order placed — pay on delivery</h1>
-          <p>Thanks${order.customer && order.customer.name ? ', ' + order.customer.name : ''}! Your order <strong>${order.id.slice(0, 18)}…</strong> is confirmed. Please have ${formatMoney(order.total, config.currency || 'php')} ready in cash when it arrives.</p>
-          <a href="/" class="btn">Continue shopping</a>`;
+          <p>Thanks${order.customer && order.customer.name ? ', ' + order.customer.name : ''}! Your order is confirmed. Please have ${formatMoney(order.total, config.currency || 'php')} ready in cash when it arrives.</p>
+          <div class="notice" style="margin-bottom:24px;">Your order ID is <strong>${order.id}</strong> — save this to track your order anytime.</div>
+          <div style="display:flex; gap:12px;">
+            <a href="/track-order.html?order_id=${order.id}" class="btn">Track this order</a>
+            <a href="/" class="btn btn-outline">Continue shopping</a>
+          </div>`;
       } else if (order.status === 'paid') {
         page.innerHTML = `
           <div class="icon-circle">✓</div>
           <h1>Thank you — order confirmed</h1>
-          <p>A confirmation has been recorded for order <strong>${order.id.slice(0, 18)}…</strong>. Total charged: ${formatMoney(order.total, config.currency || 'php')}.</p>
-          <a href="/" class="btn">Continue shopping</a>`;
+          <p>Total charged: ${formatMoney(order.total, config.currency || 'php')}.</p>
+          <div class="notice" style="margin-bottom:24px;">Your order ID is <strong>${order.id}</strong> — save this to track your order anytime.</div>
+          <div style="display:flex; gap:12px;">
+            <a href="/track-order.html?order_id=${order.id}" class="btn">Track this order</a>
+            <a href="/" class="btn btn-outline">Continue shopping</a>
+          </div>`;
       } else {
         page.innerHTML = `
           <div class="icon-circle">…</div>

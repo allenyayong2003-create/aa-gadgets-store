@@ -48,6 +48,7 @@
   let currentProduct = null;
   let currentQty = 1;
   let siteCurrency = 'usd';
+  let selectedVariants = {};
 
   async function loadProduct() {
     const params = new URLSearchParams(window.location.search);
@@ -68,7 +69,30 @@
       return;
     }
     currentProduct = await res.json();
+    // Default each variant group to its first option
+    selectedVariants = {};
+    (currentProduct.variants || []).forEach((group) => {
+      selectedVariants[group.name] = group.options[0];
+    });
     render();
+  }
+
+  function variantPickersHTML(p) {
+    if (!p.variants || p.variants.length === 0) return '';
+    return p.variants.map((group) => `
+      <div class="field" style="margin-bottom:16px;">
+        <label>${escapeHTML(group.name)}</label>
+        <select onchange="setVariant('${escapeHTML(group.name)}', this.value)">
+          ${group.options.map((opt) => `<option value="${escapeHTML(opt)}" ${selectedVariants[group.name] === opt ? 'selected' : ''}>${escapeHTML(opt)}</option>`).join('')}
+        </select>
+      </div>
+    `).join('');
+  }
+
+  function escapeHTML(str) {
+    const div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
   }
 
   function render() {
@@ -85,6 +109,7 @@
         <div class="pd-price">${formatMoney(p.price, siteCurrency)}</div>
         <p class="pd-desc">${p.description || ''}</p>
         ${outOfStock ? '<p style="color:var(--danger);font-weight:600;margin-bottom:20px;">Currently sold out</p>' : `<p style="color:var(--muted);font-size:13px;margin-bottom:20px;">${p.stock} in stock</p>`}
+        ${variantPickersHTML(p)}
         <div class="qty-row">
           <div class="qty-control">
             <button onclick="changeQty(-1)" aria-label="Decrease quantity">−</button>
@@ -92,11 +117,22 @@
             <button onclick="changeQty(1)" aria-label="Increase quantity">+</button>
           </div>
         </div>
-        <button class="btn btn-block" ${outOfStock ? 'disabled' : ''} onclick="addToCart(currentProduct.id, currentQty); currentQty=1; document.getElementById('qtyValue').textContent=1;">
+        <button class="btn btn-block" ${outOfStock ? 'disabled' : ''} onclick="addCurrentToCart()">
           ${outOfStock ? 'Unavailable' : 'Add to cart'}
         </button>
       </div>
     `;
+  }
+
+  function setVariant(groupName, value) {
+    selectedVariants[groupName] = value;
+  }
+
+  function addCurrentToCart() {
+    addToCart(currentProduct.id, currentQty, { ...selectedVariants });
+    currentQty = 1;
+    const qtyEl = document.getElementById('qtyValue');
+    if (qtyEl) qtyEl.textContent = 1;
   }
 
   function changeQty(delta) {

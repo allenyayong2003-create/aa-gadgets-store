@@ -18,6 +18,12 @@ async function loadProducts() {
 
 function productCardHTML(p) {
   const outOfStock = p.stock <= 0;
+  const hasVariants = Array.isArray(p.variants) && p.variants.length > 0;
+  const actionButton = outOfStock
+    ? `<button class="btn btn-outline" disabled>Unavailable</button>`
+    : hasVariants
+      ? `<a href="/product.html?id=${p.id}" class="btn btn-outline">Select options</a>`
+      : `<button class="btn btn-outline" onclick="addToCart('${p.id}', 1, {});event.stopPropagation();">Add to cart</button>`;
   return `
     <div class="product-card">
       <a href="/product.html?id=${p.id}">
@@ -29,9 +35,7 @@ function productCardHTML(p) {
       <span class="product-category">${escapeHTML(p.category)}</span>
       <a href="/product.html?id=${p.id}"><div class="product-name">${escapeHTML(p.name)}</div></a>
       <div class="product-price">${formatMoney(p.price, SITE_CURRENCY)}</div>
-      <button class="btn btn-outline" ${outOfStock ? 'disabled' : ''} onclick="addToCart('${p.id}');event.stopPropagation();">
-        ${outOfStock ? 'Unavailable' : 'Add to cart'}
-      </button>
+      ${actionButton}
     </div>
   `;
 }

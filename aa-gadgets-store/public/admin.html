@@ -83,7 +83,7 @@
               <input type="text" id="pCategory" placeholder="e.g. Audio" required>
             </div>
             <div class="field">
-              <label for="pPrice">Price (USD)</label>
+              <label for="pPrice">Price</label>
               <input type="number" id="pPrice" step="0.01" min="0" required>
             </div>
             <div class="field">
@@ -93,6 +93,11 @@
             <div class="field full">
               <label for="pDescription">Description</label>
               <textarea id="pDescription" placeholder="A short, honest description customers will actually read."></textarea>
+            </div>
+            <div class="field full">
+              <label for="pVariants">Options (optional — e.g. color, size)</label>
+              <textarea id="pVariants" placeholder="Color: Black, White, Blue&#10;Size: S, M, L" style="min-height:80px;"></textarea>
+              <p style="font-size:12px;color:var(--muted);margin:2px 0 0;">One option group per line, formatted as: <strong>Name: choice 1, choice 2, choice 3</strong>. Leave blank if this product has no variants. Note: stock is tracked for the whole product, not per option.</p>
             </div>
             <div class="field">
               <label for="pImageFile">Product image (upload)</label>
@@ -122,6 +127,7 @@
               <th></th>
               <th>Name</th>
               <th>Category</th>
+              <th>Options</th>
               <th>Price</th>
               <th>Stock</th>
               <th>Featured</th>
@@ -129,7 +135,7 @@
             </tr>
           </thead>
           <tbody id="productTableBody">
-            <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">Loading products…</td></tr>
+            <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">Loading products…</td></tr>
           </tbody>
         </table>
       </div>
@@ -148,11 +154,12 @@
               <th>Payment</th>
               <th>Customer</th>
               <th>Status</th>
+              <th>Tracking #</th>
               <th>Placed</th>
             </tr>
           </thead>
           <tbody id="orderTableBody">
-            <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">Loading orders…</td></tr>
+            <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">Loading orders…</td></tr>
           </tbody>
         </table>
       </div>

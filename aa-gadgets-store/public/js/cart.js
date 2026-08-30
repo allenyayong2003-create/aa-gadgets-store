@@ -1,5 +1,13 @@
-// Shared cart logic — cart lives in localStorage as { [productId]: quantity }
+// Shared cart logic — cart lives in localStorage as:
+// { [lineKey]: { productId, quantity, variants: { "Color": "Black", "Size": "M" } } }
+// lineKey combines the product id and its chosen variants, so the same product
+// with different options (e.g. two colors) shows as separate cart lines.
 const CART_KEY = 'aa_gadgets_cart';
+
+function makeLineKey(productId, variants = {}) {
+  const sortedEntries = Object.entries(variants || {}).sort(([a], [b]) => a.localeCompare(b));
+  return `${productId}::${JSON.stringify(sortedEntries)}`;
+}
 
 function getCart() {
   try {
@@ -14,26 +22,32 @@ function saveCart(cart) {
   updateCartBadge();
 }
 
-function addToCart(productId, quantity = 1) {
+function addToCart(productId, quantity = 1, variants = {}) {
   const cart = getCart();
-  cart[productId] = (cart[productId] || 0) + quantity;
+  const lineKey = makeLineKey(productId, variants);
+  if (cart[lineKey]) {
+    cart[lineKey].quantity += quantity;
+  } else {
+    cart[lineKey] = { productId, quantity, variants: variants || {} };
+  }
   saveCart(cart);
   showToast('Added to cart');
 }
 
-function setQuantity(productId, quantity) {
+function setQuantity(lineKey, quantity) {
   const cart = getCart();
+  if (!cart[lineKey]) return;
   if (quantity <= 0) {
-    delete cart[productId];
+    delete cart[lineKey];
   } else {
-    cart[productId] = quantity;
+    cart[lineKey].quantity = quantity;
   }
   saveCart(cart);
 }
 
-function removeFromCart(productId) {
+function removeFromCart(lineKey) {
   const cart = getCart();
-  delete cart[productId];
+  delete cart[lineKey];
   saveCart(cart);
 }
 
@@ -44,7 +58,7 @@ function clearCart() {
 
 function cartItemCount() {
   const cart = getCart();
-  return Object.values(cart).reduce((sum, q) => sum + q, 0);
+  return Object.values(cart).reduce((sum, line) => sum + line.quantity, 0);
 }
 
 function updateCartBadge() {

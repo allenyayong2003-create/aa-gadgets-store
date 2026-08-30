@@ -52,13 +52,35 @@ Go to `/admin.html` and sign in with the username/password from your `.env` file
 
 From there you can:
 - **Add a product** — click "+ Add product", fill in name, category, price, stock, and a description, then either upload an image file or paste an image URL.
+  - **Options (variants)** — if a product comes in different colors, sizes, etc., type them into the "Options" box, one group per line, like: `Color: Black, White, Blue` and `Size: S, M, L`. Customers will see dropdowns for each on the product page. Leave it blank for simple products with no options. Note: stock is tracked for the whole product, not separately per option.
 - **Edit a product** — click "Edit" next to any row.
 - **Delete a product** — click "Delete" (there's a confirmation before it deletes).
-- **See orders** — click "Orders" in the sidebar to see everything that's come through checkout, with payment status.
+- **See and manage orders** — click "Orders" in the sidebar. Each order shows its items (with any chosen options), payment method, and customer/delivery details. Use the **Status** dropdown to move an order through its lifecycle: Order Placed → Processing → Shipped → Out for Delivery → Delivered (or Cancelled). You can also fill in a **Tracking #** if you're using a courier.
 
 Changes show up on the live storefront immediately — no restart needed.
 
-## 5. Connecting Stripe for real payments
+## 5. Letting customers track their orders
+
+Every customer gets an Order ID after checkout (shown on the confirmation page). They can enter that ID plus the phone number or email they checked out with at `/track-order.html` to see a visual status timeline, their items, and any tracking number you've added.
+
+### Optional: email customers automatically when status changes
+
+If you'd like customers to get an email the moment you update their order status, add SMTP settings to your `.env` file. A simple option is a Gmail account with an "App Password":
+
+1. In your Google Account, turn on 2-Step Verification, then create an "App Password" (search Google for "Gmail app password" for current steps).
+2. In `.env`, set:
+   ```
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_USER=youremail@gmail.com
+   SMTP_PASS=your-16-character-app-password
+   SMTP_FROM=youremail@gmail.com
+   ```
+3. Restart the server. From now on, whenever you change an order's status in the admin panel, the customer (if they gave an email) gets an email automatically.
+
+This is entirely optional — the Track My Order page works with or without it.
+
+## 6. Connecting Stripe for real payments
 
 1. Create a free account at [stripe.com](https://stripe.com).
 2. In the Stripe dashboard, grab your **test** keys first (Developers → API keys). Put the secret key in `.env` as `STRIPE_SECRET_KEY`.

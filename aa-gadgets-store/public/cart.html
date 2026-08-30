@@ -57,12 +57,23 @@
     render();
   }
 
+  function escapeHTML(str) {
+    const div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+  }
+
+  function variantLineText(variants) {
+    if (!variants || Object.keys(variants).length === 0) return '';
+    return Object.entries(variants).map(([k, v]) => `${k}: ${v}`).join(', ');
+  }
+
   function render() {
     const cart = getCart();
-    const ids = Object.keys(cart);
+    const lineKeys = Object.keys(cart);
     const container = document.getElementById('cartContent');
 
-    if (ids.length === 0) {
+    if (lineKeys.length === 0) {
       container.innerHTML = `
         <div class="empty-state">
           Your cart is empty.
@@ -72,25 +83,28 @@
     }
 
     let subtotal = 0;
-    const itemsHTML = ids.map((id) => {
-      const product = productsById[id];
+    const itemsHTML = lineKeys.map((lineKey) => {
+      const line = cart[lineKey];
+      const product = productsById[line.productId];
       if (!product) return '';
-      const qty = cart[id];
+      const qty = line.quantity;
       const lineTotal = product.price * qty;
       subtotal += lineTotal;
+      const variantText = variantLineText(line.variants);
       return `
         <div class="cart-item">
-          <img src="${product.image}" alt="${product.name}">
+          <img src="${product.image}" alt="${escapeHTML(product.name)}">
           <div>
-            <div class="cart-item-name">${product.name}</div>
+            <div class="cart-item-name">${escapeHTML(product.name)}</div>
+            ${variantText ? `<div class="cart-item-meta" style="margin-bottom:2px;">${escapeHTML(variantText)}</div>` : ''}
             <div class="cart-item-meta">${formatMoney(product.price, siteConfig.currency)} × ${qty} = ${formatMoney(lineTotal, siteConfig.currency)}</div>
             <div class="qty-control" style="margin-top:10px;display:inline-flex;">
-              <button onclick="updateQty('${id}', ${qty - 1})">−</button>
+              <button onclick="updateQty('${lineKey}', ${qty - 1})">−</button>
               <span>${qty}</span>
-              <button onclick="updateQty('${id}', ${qty + 1})">+</button>
+              <button onclick="updateQty('${lineKey}', ${qty + 1})">+</button>
             </div>
           </div>
-          <button class="cart-item-remove" onclick="updateQty('${id}', 0)">Remove</button>
+          <button class="cart-item-remove" onclick="updateQty('${lineKey}', 0)">Remove</button>
         </div>
       `;
     }).join('');
@@ -122,6 +136,10 @@
               <label for="codPhone">Phone number</label>
               <input type="text" id="codPhone" placeholder="09XX XXX XXXX">
             </div>
+            <div class="field" style="margin-bottom:14px;">
+              <label for="codEmail">Email (optional — for order updates)</label>
+              <input type="email" id="codEmail" placeholder="you@example.com">
+            </div>
             <div class="field">
               <label for="codAddress">Delivery address</label>
               <textarea id="codAddress" placeholder="House/unit no., street, barangay, city, province"></textarea>
@@ -144,15 +162,20 @@
     render();
   }
 
-  function updateQty(id, qty) {
-    setQuantity(id, qty);
+  function updateQty(lineKey, qty) {
+    setQuantity(lineKey, qty);
     render();
   }
 
   async function checkout() {
     const cart = getCart();
-    const items = Object.entries(cart).map(([id, quantity]) => ({ id, quantity }));
-    if (items.length === 0) return;
+    const lineKeys = Object.keys(cart);
+    if (lineKeys.length === 0) return;
+    const items = lineKeys.map((lineKey) => ({
+      id: cart[lineKey].productId,
+      quantity: cart[lineKey].quantity,
+      variants: cart[lineKey].variants || {}
+    }));
 
     const btn = document.getElementById('checkoutBtn');
     const errorEl = document.getElementById('checkoutError');
@@ -161,6 +184,7 @@
     if (paymentMethod === 'cod') {
       const name = document.getElementById('codName').value.trim();
       const phone = document.getElementById('codPhone').value.trim();
+      const email = document.getElementById('codEmail').value.trim();
       const address = document.getElementById('codAddress').value.trim();
 
       if (!name || !phone || !address) {
@@ -176,7 +200,7 @@
         const res = await fetch('/api/checkout/cod', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items, customer: { name, phone, address } })
+          body: JSON.stringify({ items, customer: { name, phone, address, email } })
         });
         const data = await res.json();
         if (!res.ok) {

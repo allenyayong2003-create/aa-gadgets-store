@@ -92,14 +92,19 @@ function renderStats() {
 function renderProductTable() {
   const body = document.getElementById('productTableBody');
   if (ADMIN_PRODUCTS.length === 0) {
-    body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">No products yet — add your first one above.</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">No products yet — add your first one above.</td></tr>';
     return;
   }
-  body.innerHTML = ADMIN_PRODUCTS.map((p) => `
+  body.innerHTML = ADMIN_PRODUCTS.map((p) => {
+    const variantsSummary = (p.variants || []).length
+      ? p.variants.map((v) => `${v.name} (${v.options.length})`).join(', ')
+      : '—';
+    return `
     <tr>
       <td><img class="admin-thumb" src="${p.image}" alt="${escapeAttr(p.name)}"></td>
       <td>${escapeAttr(p.name)}</td>
       <td>${escapeAttr(p.category)}</td>
+      <td style="font-size:12px;color:var(--muted);">${escapeAttr(variantsSummary)}</td>
       <td>${formatMoney(p.price, ADMIN_CURRENCY)}</td>
       <td>
         ${p.stock === 0
@@ -116,7 +121,8 @@ function renderProductTable() {
         </div>
       </td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function escapeAttr(str) {
@@ -151,6 +157,7 @@ function editProduct(id) {
   document.getElementById('pPrice').value = p.price;
   document.getElementById('pStock').value = p.stock;
   document.getElementById('pDescription').value = p.description || '';
+  document.getElementById('pVariants').value = (p.variants || []).map((v) => `${v.name}: ${v.options.join(', ')}`).join('\n');
   document.getElementById('pImageUrl').value = p.image.startsWith('http') ? p.image : '';
   document.getElementById('pImageFile').value = '';
   document.getElementById('pFeatured').checked = !!p.featured;
@@ -169,6 +176,7 @@ productForm.addEventListener('submit', async (e) => {
   formData.append('price', document.getElementById('pPrice').value);
   formData.append('stock', document.getElementById('pStock').value);
   formData.append('description', document.getElementById('pDescription').value.trim());
+  formData.append('variantsText', document.getElementById('pVariants').value);
   formData.append('featured', document.getElementById('pFeatured').checked);
 
   const imageUrl = document.getElementById('pImageUrl').value.trim();
@@ -208,38 +216,80 @@ async function deleteProduct(id) {
 }
 
 // ---------- Orders ----------
+const ORDER_STATUSES = ['Order Placed', 'Processing', 'Shipped', 'Out for Delivery', 'Delivered', 'Cancelled'];
+
 async function loadOrders() {
   const res = await fetch('/api/admin/orders');
   const body = document.getElementById('orderTableBody');
   if (!res.ok) {
-    body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">Could not load orders.</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">Could not load orders.</td></tr>';
     return;
   }
   const orders = await res.json();
   if (orders.length === 0) {
-    body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">No orders yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">No orders yet.</td></tr>';
     return;
   }
   body.innerHTML = orders.map((o) => {
     const isCod = o.paymentMethod === 'cod';
     const customer = o.customer
-      ? `${escapeAttr(o.customer.name)}<br><span style="color:var(--muted);font-size:12px;">${escapeAttr(o.customer.phone)}<br>${escapeAttr(o.customer.address)}</span>`
+      ? `${escapeAttr(o.customer.name)}<br><span style="color:var(--muted);font-size:12px;">${escapeAttr(o.customer.phone || '')}${o.customer.email ? '<br>' + escapeAttr(o.customer.email) : ''}${o.customer.address ? '<br>' + escapeAttr(o.customer.address) : ''}</span>`
       : '—';
-    const statusBadge = isCod
-      ? '<span class="badge badge-pending">Pay on delivery</span>'
-      : `<span class="badge ${o.status === 'paid' ? 'badge-ok' : 'badge-pending'}">${o.status}</span>`;
+    const itemsText = o.items.map((i) => {
+      const variantText = i.variants && Object.keys(i.variants).length
+        ? ` (${Object.entries(i.variants).map(([k, v]) => `${k}: ${v}`).join(', ')})`
+        : '';
+      return `${escapeAttr(i.name)}${escapeAttr(variantText)} ×${i.quantity}`;
+    }).join(', ');
+    const currentStatus = o.fulfillmentStatus || 'Order Placed';
+    const statusOptions = ORDER_STATUSES.map((s) => `<option value="${s}" ${s === currentStatus ? 'selected' : ''}>${s}</option>`).join('');
     return `
     <tr>
       <td>${o.id.slice(0, 16)}…</td>
-      <td>${o.items.map((i) => `${escapeAttr(i.name)} ×${i.quantity}`).join(', ')}</td>
+      <td style="max-width:220px;">${itemsText}</td>
       <td>${formatMoney(o.total, ADMIN_CURRENCY)}</td>
       <td>${isCod ? 'Cash on Delivery' : 'Card'}</td>
       <td>${customer}</td>
-      <td>${statusBadge}</td>
+      <td>
+        <select onchange="updateOrderStatus('${o.id}', this.value)" style="border:1px solid var(--line); padding:6px 8px; border-radius:2px; font-size:13px;">
+          ${statusOptions}
+        </select>
+      </td>
+      <td>
+        <input type="text" value="${escapeAttr(o.trackingNumber || '')}" placeholder="Optional" style="width:110px; border:1px solid var(--line); padding:6px 8px; border-radius:2px; font-size:13px;"
+          onblur="updateTrackingNumber('${o.id}', this.value)">
+      </td>
       <td>${new Date(o.createdAt).toLocaleString()}</td>
     </tr>
   `;
   }).join('');
+}
+
+async function updateOrderStatus(orderId, status) {
+  const res = await fetch(`/api/admin/orders/${orderId}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status })
+  });
+  if (res.ok) {
+    showToast(`Order marked as "${status}"`);
+  } else {
+    showToast('Could not update order status');
+    loadOrders();
+  }
+}
+
+async function updateTrackingNumber(orderId, trackingNumber) {
+  const res = await fetch(`/api/admin/orders/${orderId}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ trackingNumber })
+  });
+  if (res.ok) {
+    showToast('Tracking number saved');
+  } else {
+    showToast('Could not save tracking number');
+  }
 }
 
 boot();

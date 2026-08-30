@@ -23,8 +23,83 @@ if (stripeKey.startsWith('sk_') && !stripeKey.includes('your_secret_key_here')) 
   stripe = require('stripe')(stripeKey);
 }
 
+// ---------- Optional email notifications (SMTP) ----------
+// If SMTP_HOST/SMTP_USER/SMTP_PASS are set in .env, status-update emails will be sent.
+// If not configured, the app works fine without it — customers can still use the
+// "Track My Order" page to check status themselves.
+let mailTransport = null;
+if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+  const nodemailer = require('nodemailer');
+  mailTransport = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: parseInt(process.env.SMTP_PORT || '587', 10),
+    secure: process.env.SMTP_PORT === '465',
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+  });
+}
+
+async function notifyCustomerByEmail(order) {
+  if (!mailTransport) return;
+  const email = order.customer && order.customer.email;
+  if (!email) return;
+  const itemsList = order.items.map((i) => `${i.name} x${i.quantity}`).join(', ');
+  try {
+    await mailTransport.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: email,
+      subject: `Your A&A Gadgets order is now: ${order.fulfillmentStatus}`,
+      text:
+        `Hi ${(order.customer && order.customer.name) || 'there'},\n\n` +
+        `Your order (${order.id}) status has been updated to: ${order.fulfillmentStatus}.\n\n` +
+        `Items: ${itemsList}\n` +
+        (order.trackingNumber ? `Tracking number: ${order.trackingNumber}\n` : '') +
+        `\nYou can check your order anytime at ${SITE_URL}/track-order.html\n\n` +
+        `Thanks for shopping with A&A Gadgets!`
+    });
+  } catch (e) {
+    console.error('Email notify failed:', e.message);
+  }
+}
+
+// ---------- Order fulfillment statuses ----------
+const ORDER_STATUSES = ['Order Placed', 'Processing', 'Shipped', 'Out for Delivery', 'Delivered', 'Cancelled'];
+
+// ---------- Product variants helper ----------
+// Admin types variants as plain text, one group per line, e.g.:
+//   Color: Black, White, Blue
+//   Size: S, M, L
+function parseVariantsText(text) {
+  if (!text) return [];
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const separatorIndex = line.indexOf(':');
+      if (separatorIndex === -1) return null;
+      const name = line.slice(0, separatorIndex).trim();
+      const options = line
+        .slice(separatorIndex + 1)
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean);
+      if (!name || options.length === 0) return null;
+      return { name, options };
+    })
+    .filter(Boolean);
+}
+
+function variantsToText(variants) {
+  if (!Array.isArray(variants)) return '';
+  return variants.map((v) => `${v.name}: ${v.options.join(', ')}`).join('\n');
+}
+
 // ---------- Database (simple JSON file) ----------
-const dbFile = path.join(__dirname, 'data', 'db.json');
+// This whole "data" folder should be mounted as a persistent Volume on Railway
+// (see README) so product/order data and uploaded photos survive every redeploy.
+const dataDir = path.join(__dirname, 'data');
+fs.mkdirSync(dataDir, { recursive: true });
+const dbFile = path.join(dataDir, 'db.json');
 const adapter = new FileSync(dbFile);
 const db = low(adapter);
 db.defaults({ products: [], orders: [] }).write();
@@ -45,8 +120,12 @@ app.use(
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ---------- Image upload (admin product photos) ----------
-const uploadDir = path.join(__dirname, 'public', 'images', 'products');
+// Uploaded photos are stored inside data/uploads (part of the persistent volume),
+// and served at the URL path /uploads/<filename>.
+const uploadDir = path.join(dataDir, 'uploads');
 fs.mkdirSync(uploadDir, { recursive: true });
+app.use('/uploads', express.static(uploadDir));
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
@@ -62,6 +141,7 @@ const upload = multer({
     cb(ok ? null : new Error('Only image files are allowed'), ok);
   }
 });
+
 
 // ---------- Auth helpers ----------
 function requireAdmin(req, res, next) {
@@ -101,12 +181,12 @@ app.get('/api/admin/session', (req, res) => {
 
 // ---------- Admin product management ----------
 app.post('/api/admin/products', requireAdmin, upload.single('image'), (req, res) => {
-  const { name, category, price, stock, description, featured } = req.body;
+  const { name, category, price, stock, description, featured, variantsText } = req.body;
   if (!name || !price) return res.status(400).json({ error: 'Name and price are required' });
 
   const id = 'p' + crypto.randomBytes(5).toString('hex');
   const image = req.file
-    ? `/images/products/${req.file.filename}`
+    ? `/uploads/${req.file.filename}`
     : req.body.imageUrl || '/images/products/placeholder-1.svg';
 
   const product = {
@@ -118,6 +198,7 @@ app.post('/api/admin/products', requireAdmin, upload.single('image'), (req, res)
     description: description || '',
     image,
     featured: featured === 'true' || featured === true,
+    variants: parseVariantsText(variantsText || ''),
     createdAt: new Date().toISOString()
   };
 
@@ -129,18 +210,19 @@ app.put('/api/admin/products/:id', requireAdmin, upload.single('image'), (req, r
   const product = db.get('products').find({ id: req.params.id }).value();
   if (!product) return res.status(404).json({ error: 'Product not found' });
 
-  const { name, category, price, stock, description, featured, imageUrl } = req.body;
+  const { name, category, price, stock, description, featured, imageUrl, variantsText } = req.body;
   const updates = {
     name: name !== undefined ? name : product.name,
     category: category !== undefined ? category : product.category,
     price: price !== undefined ? parseFloat(price) : product.price,
     stock: stock !== undefined ? parseInt(stock, 10) : product.stock,
     description: description !== undefined ? description : product.description,
-    featured: featured !== undefined ? (featured === 'true' || featured === true) : product.featured
+    featured: featured !== undefined ? (featured === 'true' || featured === true) : product.featured,
+    variants: variantsText !== undefined ? parseVariantsText(variantsText) : (product.variants || [])
   };
 
   if (req.file) {
-    updates.image = `/images/products/${req.file.filename}`;
+    updates.image = `/uploads/${req.file.filename}`;
   } else if (imageUrl) {
     updates.image = imageUrl;
   }
@@ -180,13 +262,15 @@ app.post('/api/checkout', async (req, res) => {
       const product = products.find((p) => p.id === item.id);
       if (!product) continue;
       const quantity = Math.max(1, parseInt(item.quantity, 10) || 1);
+      const variants = item.variants && typeof item.variants === 'object' ? item.variants : {};
+      const variantSummary = Object.entries(variants).map(([k, v]) => `${k}: ${v}`).join(', ');
       total += product.price * quantity;
-      orderItems.push({ id: product.id, name: product.name, price: product.price, quantity });
+      orderItems.push({ id: product.id, name: product.name, price: product.price, quantity, variants });
       lineItems.push({
         price_data: {
           currency: CURRENCY,
           product_data: {
-            name: product.name,
+            name: variantSummary ? `${product.name} (${variantSummary})` : product.name,
             images: product.image.startsWith('http') ? [product.image] : []
           },
           unit_amount: Math.round(product.price * 100)
@@ -221,6 +305,9 @@ app.post('/api/checkout', async (req, res) => {
       total: Math.round(total * 100) / 100,
       status: 'pending',
       paymentMethod: 'card',
+      fulfillmentStatus: 'Order Placed',
+      statusHistory: [{ status: 'Order Placed', at: new Date().toISOString() }],
+      trackingNumber: null,
       createdAt: new Date().toISOString()
     };
     db.get('orders').push(order).write();
@@ -235,7 +322,7 @@ app.post('/api/checkout', async (req, res) => {
 // ---------- Checkout (Cash on Delivery) ----------
 app.post('/api/checkout/cod', (req, res) => {
   try {
-    const { items, customer } = req.body; // items: [{id, quantity}], customer: {name, phone, address}
+    const { items, customer } = req.body; // items: [{id, quantity, variants}], customer: {name, phone, address, email?}
 
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Cart is empty' });
@@ -252,8 +339,9 @@ app.post('/api/checkout/cod', (req, res) => {
       const product = products.find((p) => p.id === item.id);
       if (!product) continue;
       const quantity = Math.max(1, parseInt(item.quantity, 10) || 1);
+      const variants = item.variants && typeof item.variants === 'object' ? item.variants : {};
       total += product.price * quantity;
-      orderItems.push({ id: product.id, name: product.name, price: product.price, quantity });
+      orderItems.push({ id: product.id, name: product.name, price: product.price, quantity, variants });
     }
 
     if (orderItems.length === 0) {
@@ -267,10 +355,14 @@ app.post('/api/checkout/cod', (req, res) => {
       total: Math.round(total * 100) / 100,
       status: 'pending',
       paymentMethod: 'cod',
+      fulfillmentStatus: 'Order Placed',
+      statusHistory: [{ status: 'Order Placed', at: new Date().toISOString() }],
+      trackingNumber: null,
       customer: {
         name: customer.name.trim(),
         phone: customer.phone.trim(),
-        address: customer.address.trim()
+        address: customer.address.trim(),
+        email: customer.email ? customer.email.trim() : null
       },
       createdAt: new Date().toISOString()
     };
@@ -288,18 +380,79 @@ app.get('/api/order-status/:orderId', async (req, res) => {
   const order = db.get('orders').find({ id: req.params.orderId }).value();
   if (!order) return res.status(404).json({ error: 'Order not found' });
 
-  if (stripe && order.paymentMethod !== 'cod' && order.status !== 'paid') {
+  if (stripe && order.paymentMethod !== 'cod') {
     try {
       const session = await stripe.checkout.sessions.retrieve(req.params.orderId);
-      if (session.payment_status === 'paid') {
-        db.get('orders').find({ id: req.params.orderId }).assign({ status: 'paid' }).write();
-        order.status = 'paid';
+      const updates = {};
+      if (session.payment_status === 'paid' && order.status !== 'paid') {
+        updates.status = 'paid';
+      }
+      if (session.customer_details && session.customer_details.email && !(order.customer && order.customer.email)) {
+        updates.customer = {
+          ...(order.customer || {}),
+          email: session.customer_details.email,
+          name: session.customer_details.name || (order.customer && order.customer.name) || null
+        };
+      }
+      if (Object.keys(updates).length > 0) {
+        db.get('orders').find({ id: req.params.orderId }).assign(updates).write();
+        Object.assign(order, updates);
       }
     } catch (e) {
       // ignore lookup errors, return what we have
     }
   }
   res.json(order);
+});
+
+// ---------- Admin: update order fulfillment status ----------
+app.patch('/api/admin/orders/:id/status', requireAdmin, async (req, res) => {
+  const order = db.get('orders').find({ id: req.params.id }).value();
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+
+  const { status, trackingNumber } = req.body;
+  if (status && !ORDER_STATUSES.includes(status)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+
+  const updates = {};
+  if (trackingNumber !== undefined) updates.trackingNumber = trackingNumber;
+  if (status && status !== order.fulfillmentStatus) {
+    updates.fulfillmentStatus = status;
+    updates.statusHistory = [...(order.statusHistory || []), { status, at: new Date().toISOString() }];
+  }
+
+  db.get('orders').find({ id: req.params.id }).assign(updates).write();
+  const updated = db.get('orders').find({ id: req.params.id }).value();
+
+  if (status && status !== order.fulfillmentStatus) {
+    notifyCustomerByEmail(updated).catch(() => {});
+  }
+
+  res.json(updated);
+});
+
+// ---------- Public: track an order ----------
+app.post('/api/track-order', (req, res) => {
+  const { orderId, contact } = req.body;
+  if (!orderId || !contact) {
+    return res.status(400).json({ error: 'Please enter your order ID and the phone number or email used at checkout' });
+  }
+  const order = db.get('orders').find({ id: orderId.trim() }).value();
+  if (!order) {
+    return res.status(404).json({ error: 'No order found with that ID. Please double-check and try again.' });
+  }
+  const cleanContact = contact.trim().toLowerCase().replace(/\s+/g, '');
+  const phoneMatch = order.customer && order.customer.phone && order.customer.phone.replace(/\s+/g, '') === contact.trim().replace(/\s+/g, '');
+  const emailMatch = order.customer && order.customer.email && order.customer.email.toLowerCase() === cleanContact;
+  if (!phoneMatch && !emailMatch) {
+    return res.status(403).json({ error: 'That phone number or email does not match this order.' });
+  }
+  res.json(order);
+});
+
+app.get('/api/order-statuses', (req, res) => {
+  res.json(ORDER_STATUSES);
 });
 
 app.get('/api/config', (req, res) => {
