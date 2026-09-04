@@ -17,10 +17,43 @@ const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';
 const CURRENCY = (process.env.CURRENCY || 'php').toLowerCase();
 const SITE_URL = process.env.SITE_URL || `http://localhost:${PORT}`;
 
-let stripe = null;
-const stripeKey = process.env.STRIPE_SECRET_KEY || '';
-if (stripeKey.startsWith('sk_') && !stripeKey.includes('your_secret_key_here')) {
-  stripe = require('stripe')(stripeKey);
+// ---------- PayMongo (online payments: card, GCash, Maya, GrabPay) ----------
+const PAYMONGO_SECRET_KEY = process.env.PAYMONGO_SECRET_KEY || '';
+const paymongoConfigured = PAYMONGO_SECRET_KEY.startsWith('sk_') && !PAYMONGO_SECRET_KEY.includes('your_secret_key_here');
+const PAYMONGO_PAYMENT_METHODS = (process.env.PAYMONGO_PAYMENT_METHODS || 'card,gcash,paymaya,grab_pay')
+  .split(',')
+  .map((m) => m.trim())
+  .filter(Boolean);
+
+function paymongoAuthHeader() {
+  return 'Basic ' + Buffer.from(`${PAYMONGO_SECRET_KEY}:`).toString('base64');
+}
+
+async function paymongoRequest(path, method, body) {
+  const res = await fetch(`https://api.paymongo.com/v1${path}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: paymongoAuthHeader()
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+
+  const rawText = await res.text();
+  let data;
+  try {
+    data = JSON.parse(rawText);
+  } catch (parseErr) {
+    // The response wasn't valid JSON at all — most likely a network/proxy
+    // issue rather than an actual PayMongo API error. Surface something useful.
+    throw new Error(`PayMongo returned an unexpected response (status ${res.status}): ${rawText.slice(0, 200)}`);
+  }
+
+  if (!res.ok) {
+    const message = (data.errors && data.errors[0] && data.errors[0].detail) || 'PayMongo request failed';
+    throw new Error(message);
+  }
+  return data;
 }
 
 // ---------- Optional email notifications (SMTP) ----------
@@ -256,10 +289,10 @@ app.get('/api/admin/orders', requireAdmin, (req, res) => {
   res.json(orders);
 });
 
-// ---------- Checkout (Stripe) ----------
+// ---------- Checkout (PayMongo — card, GCash, Maya, GrabPay) ----------
 app.post('/api/checkout', async (req, res) => {
   try {
-    const { items } = req.body; // [{ id, quantity }]
+    const { items } = req.body; // [{ id, quantity, variants }]
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Cart is empty' });
     }
@@ -278,14 +311,9 @@ app.post('/api/checkout', async (req, res) => {
       total += product.price * quantity;
       orderItems.push({ id: product.id, name: product.name, price: product.price, quantity, variants });
       lineItems.push({
-        price_data: {
-          currency: CURRENCY,
-          product_data: {
-            name: variantSummary ? `${product.name} (${variantSummary})` : product.name,
-            images: product.image.startsWith('http') ? [product.image] : []
-          },
-          unit_amount: Math.round(product.price * 100)
-        },
+        currency: 'PHP',
+        amount: Math.round(product.price * 100), // centavos
+        name: variantSummary ? `${product.name} (${variantSummary})` : product.name,
         quantity
       });
     }
@@ -294,28 +322,39 @@ app.post('/api/checkout', async (req, res) => {
       return res.status(400).json({ error: 'No valid items in cart' });
     }
 
-    if (!stripe) {
-      // Stripe isn't configured yet — explain this clearly instead of failing silently.
+    if (!paymongoConfigured) {
+      // PayMongo isn't configured yet — explain this clearly instead of failing silently.
       return res.status(503).json({
         error:
-          'Payments are not configured yet. Add your Stripe secret key to the .env file (see .env.example) to enable checkout.'
+          'Online payments are not configured yet. Add your PayMongo secret key to the .env file (see .env.example) to enable this.'
       });
     }
 
-    const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
-      payment_method_types: ['card'],
-      line_items: lineItems,
-      success_url: `${SITE_URL}/success.html?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${SITE_URL}/cart.html`
+    // We generate our own order ID up front (same pattern as Cash on Delivery)
+    // so we can build a success_url that already points straight at this order.
+    const orderId = 'pm_' + crypto.randomBytes(8).toString('hex');
+
+    const checkoutSession = await paymongoRequest('/checkout_sessions', 'POST', {
+      data: {
+        attributes: {
+          line_items: lineItems,
+          payment_method_types: PAYMONGO_PAYMENT_METHODS,
+          reference_number: orderId,
+          send_email_receipt: false,
+          show_line_items: true,
+          success_url: `${SITE_URL}/success.html?order_id=${orderId}`,
+          cancel_url: `${SITE_URL}/cart.html`
+        }
+      }
     });
 
     const order = {
-      id: session.id,
+      id: orderId,
       items: orderItems,
       total: Math.round(total * 100) / 100,
       status: 'pending',
       paymentMethod: 'card',
+      paymongoCheckoutSessionId: checkoutSession.data.id,
       fulfillmentStatus: 'Order Placed',
       statusHistory: [{ status: 'Order Placed', at: new Date().toISOString() }],
       trackingNumber: null,
@@ -323,9 +362,9 @@ app.post('/api/checkout', async (req, res) => {
     };
     db.get('orders').push(order).write();
 
-    res.json({ url: session.url });
+    res.json({ url: checkoutSession.data.attributes.checkout_url });
   } catch (err) {
-    console.error('Checkout error:', err);
+    console.error('Checkout error:', err.message);
     res.status(500).json({ error: 'Something went wrong creating checkout session' });
   }
 });
@@ -386,30 +425,37 @@ app.post('/api/checkout/cod', (req, res) => {
   }
 });
 
-// Mark order as paid once Stripe redirects back to success.html
+// Check payment status with PayMongo once the customer returns to success.html
 app.get('/api/order-status/:orderId', async (req, res) => {
   const order = db.get('orders').find({ id: req.params.orderId }).value();
   if (!order) return res.status(404).json({ error: 'Order not found' });
 
-  if (stripe && order.paymentMethod !== 'cod') {
+  if (paymongoConfigured && order.paymentMethod !== 'cod' && order.paymongoCheckoutSessionId) {
     try {
-      const session = await stripe.checkout.sessions.retrieve(req.params.orderId);
+      const session = await paymongoRequest(`/checkout_sessions/${order.paymongoCheckoutSessionId}`, 'GET');
+      const attrs = session.data.attributes;
       const updates = {};
-      if (session.payment_status === 'paid' && order.status !== 'paid') {
+
+      const paymentIntentStatus = attrs.payment_intent && attrs.payment_intent.attributes && attrs.payment_intent.attributes.status;
+      const hasPaidPayment = Array.isArray(attrs.payments) && attrs.payments.some((p) => p.attributes && p.attributes.status === 'paid');
+      if ((paymentIntentStatus === 'succeeded' || hasPaidPayment) && order.status !== 'paid') {
         updates.status = 'paid';
       }
-      if (session.customer_details && session.customer_details.email && !(order.customer && order.customer.email)) {
+
+      if (attrs.billing && attrs.billing.email && !(order.customer && order.customer.email)) {
         updates.customer = {
           ...(order.customer || {}),
-          email: session.customer_details.email,
-          name: session.customer_details.name || (order.customer && order.customer.name) || null
+          email: attrs.billing.email,
+          name: attrs.billing.name || (order.customer && order.customer.name) || null
         };
       }
+
       if (Object.keys(updates).length > 0) {
         db.get('orders').find({ id: req.params.orderId }).assign(updates).write();
         Object.assign(order, updates);
       }
     } catch (e) {
+      console.error('[paymongo] status check failed:', e.message);
       // ignore lookup errors, return what we have
     }
   }
@@ -473,13 +519,15 @@ app.get('/api/order-statuses', (req, res) => {
 });
 
 app.get('/api/config', (req, res) => {
-  res.json({ stripeConfigured: !!stripe, currency: CURRENCY, codEnabled: true });
+  res.json({ onlinePaymentConfigured: paymongoConfigured, currency: CURRENCY, codEnabled: true });
 });
 
 app.listen(PORT, () => {
   console.log(`A&A Gadgets store running at http://localhost:${PORT}`);
   console.log(`Admin panel at http://localhost:${PORT}/admin.html`);
-  if (!stripe) {
-    console.log('NOTE: Stripe is not configured. Add STRIPE_SECRET_KEY to .env to enable checkout.');
+  if (!paymongoConfigured) {
+    console.log('NOTE: PayMongo is not configured. Add PAYMONGO_SECRET_KEY to .env to enable online payments.');
+  } else {
+    console.log(`PayMongo configured — accepting: ${PAYMONGO_PAYMENT_METHODS.join(', ')}`);
   }
 });

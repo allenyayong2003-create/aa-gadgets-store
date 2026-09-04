@@ -42,7 +42,7 @@
 <script src="/js/cart.js"></script>
 <script>
   let productsById = {};
-  let siteConfig = { stripeConfigured: false, currency: 'php', codEnabled: true };
+  let siteConfig = { onlinePaymentConfigured: false, currency: 'php', codEnabled: true };
   let paymentMethod = 'cod';
 
   async function init() {
@@ -53,7 +53,7 @@
     const products = await productsRes.json();
     siteConfig = await configRes.json();
     productsById = Object.fromEntries(products.map((p) => [p.id, p]));
-    paymentMethod = siteConfig.stripeConfigured ? 'card' : 'cod';
+    paymentMethod = siteConfig.onlinePaymentConfigured ? 'card' : 'cod';
     render();
   }
 
@@ -123,7 +123,7 @@
             </div>
             <div class="filters" style="margin-top:8px;">
               <button type="button" class="chip ${paymentMethod === 'cod' ? 'active' : ''}" onclick="setPaymentMethod('cod')">Cash on Delivery</button>
-              <button type="button" class="chip ${paymentMethod === 'card' ? 'active' : ''}" onclick="setPaymentMethod('card')" ${!siteConfig.stripeConfigured ? 'disabled title="Card payments are not connected yet"' : ''}>Pay by Card</button>
+              <button type="button" class="chip ${paymentMethod === 'card' ? 'active' : ''}" onclick="setPaymentMethod('card')" ${!siteConfig.onlinePaymentConfigured ? 'disabled title="Online payment is not connected yet"' : ''}>Pay Online (Card/GCash/Maya)</button>
             </div>
           </div>
 
@@ -150,14 +150,14 @@
             ${paymentMethod === 'cod' ? 'Place order (Cash on Delivery)' : 'Checkout securely'}
           </button>
           <p class="error-text" id="checkoutError">Something went wrong.</p>
-          ${!siteConfig.stripeConfigured ? '<div class="notice">Card payments aren\'t connected yet, but Cash on Delivery is ready to use.</div>' : ''}
+          ${!siteConfig.onlinePaymentConfigured ? '<div class="notice">Online payment isn\'t connected yet, but Cash on Delivery is ready to use.</div>' : ''}
         </div>
       </div>
     `;
   }
 
   function setPaymentMethod(method) {
-    if (method === 'card' && !siteConfig.stripeConfigured) return;
+    if (method === 'card' && !siteConfig.onlinePaymentConfigured) return;
     paymentMethod = method;
     render();
   }
@@ -220,7 +220,7 @@
       return;
     }
 
-    // Card payment via Stripe
+    // Online payment via PayMongo (card, GCash, Maya, GrabPay)
     btn.disabled = true;
     btn.textContent = 'Redirecting to secure checkout…';
 

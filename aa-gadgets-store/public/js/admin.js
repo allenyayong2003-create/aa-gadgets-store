@@ -248,7 +248,7 @@ async function loadOrders() {
       <td>${o.id.slice(0, 16)}…</td>
       <td style="max-width:220px;">${itemsText}</td>
       <td>${formatMoney(o.total, ADMIN_CURRENCY)}</td>
-      <td>${isCod ? 'Cash on Delivery' : 'Card'}</td>
+      <td>${isCod ? 'Cash on Delivery' : 'Online (PayMongo)'}</td>
       <td>${customer}</td>
       <td>
         <select onchange="updateOrderStatus('${o.id}', this.value)" style="border:1px solid var(--line); padding:6px 8px; border-radius:2px; font-size:13px;">

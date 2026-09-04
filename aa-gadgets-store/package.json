@@ -1,7 +1,7 @@
 {
   "name": "aa-gadgets-store",
   "version": "1.0.0",
-  "description": "A&A Gadgets - minimalist online store with admin panel and Stripe checkout",
+  "description": "A&A Gadgets - minimalist online store with admin panel and PayMongo checkout",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -12,7 +12,6 @@
     "express-session": "^1.18.0",
     "multer": "^2.0.0",
     "dotenv": "^16.4.5",
-    "stripe": "^16.8.0",
     "lowdb": "^1.0.0",
     "cookie-parser": "^1.4.6",
     "nodemailer": "^9.0.6"

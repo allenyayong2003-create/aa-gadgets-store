@@ -152,7 +152,7 @@
           <h3 style="margin:0;">Order ${escapeHTML(order.id)}</h3>
           <span style="font-weight:700;">${formatMoney(order.total, siteConfig.currency)}</span>
         </div>
-        <p style="color:var(--muted); font-size:13px; margin-bottom:20px;">Placed ${new Date(order.createdAt).toLocaleString()} · ${order.paymentMethod === 'cod' ? 'Cash on Delivery' : 'Paid by card'}</p>
+        <p style="color:var(--muted); font-size:13px; margin-bottom:20px;">Placed ${new Date(order.createdAt).toLocaleString()} · ${order.paymentMethod === 'cod' ? 'Cash on Delivery' : 'Paid online (PayMongo)'}</p>
         <ul class="status-timeline">${timelineHTML}</ul>
         ${order.trackingNumber ? `<div class="notice" style="margin-bottom:20px;">Tracking number: <strong>${escapeHTML(order.trackingNumber)}</strong></div>` : ''}
         <h4 style="font-family:'Archivo',sans-serif; font-size:13px; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); margin-bottom:8px;">Items</h4>
