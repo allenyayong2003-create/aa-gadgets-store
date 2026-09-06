@@ -206,6 +206,72 @@ button, input, textarea, select {
 
 .motif-divider svg { width: 18px; height: 18px; }
 
+/* ---------- Slideshow (homepage promo banners) ---------- */
+.slideshow {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 21 / 7;
+  max-height: 420px;
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.slideshow-track {
+  display: flex;
+  height: 100%;
+  transition: transform 0.5s ease;
+}
+
+.slideshow-slide {
+  min-width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.slideshow-slide img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.slideshow-slide .caption {
+  position: absolute;
+  left: 32px;
+  bottom: 28px;
+  background: rgba(255,255,255,0.92);
+  padding: 10px 18px;
+  font-family: 'Archivo', sans-serif;
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.slideshow-dots {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+}
+
+.slideshow-dots .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.6);
+  border: 1px solid rgba(0,0,0,0.15);
+  cursor: pointer;
+}
+
+.slideshow-dots .dot.active {
+  background: var(--ink);
+}
+
+@media (max-width: 560px) {
+  .slideshow { aspect-ratio: 4 / 3; max-height: 320px; }
+  .slideshow-slide .caption { left: 16px; bottom: 16px; font-size: 13px; padding: 8px 14px; }
+}
+
 /* ---------- Hero ---------- */
 .hero {
   padding: 84px 0 64px;

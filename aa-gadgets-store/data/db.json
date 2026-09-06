@@ -9,7 +9,13 @@
       "description": "True wireless earbuds with active noise cancellation and 30-hour battery life.",
       "image": "/images/products/placeholder-1.svg",
       "featured": true,
-      "createdAt": "2026-08-01T00:00:00.000Z"
+      "createdAt": "2026-08-01T00:00:00.000Z",
+      "reviews": [],
+      "sold": 0,
+      "images": [
+        "/images/products/placeholder-1.svg"
+      ],
+      "variantImages": {}
     },
     {
       "id": "p2",
@@ -20,7 +26,13 @@
       "description": "Track your workouts, heart rate, and sleep with a week-long battery life.",
       "image": "/images/products/placeholder-2.svg",
       "featured": true,
-      "createdAt": "2026-08-01T00:00:00.000Z"
+      "createdAt": "2026-08-01T00:00:00.000Z",
+      "reviews": [],
+      "sold": 0,
+      "images": [
+        "/images/products/placeholder-2.svg"
+      ],
+      "variantImages": {}
     },
     {
       "id": "p3",
@@ -31,7 +43,13 @@
       "description": "Featherlight aluminum laptop with all-day battery and a crisp 14-inch display.",
       "image": "/images/products/placeholder-3.svg",
       "featured": true,
-      "createdAt": "2026-08-01T00:00:00.000Z"
+      "createdAt": "2026-08-01T00:00:00.000Z",
+      "reviews": [],
+      "sold": 0,
+      "images": [
+        "/images/products/placeholder-3.svg"
+      ],
+      "variantImages": {}
     },
     {
       "id": "p4",
@@ -42,7 +60,13 @@
       "description": "Drop-tested silicone case with a soft-touch finish and raised camera bezel.",
       "image": "/images/products/placeholder-4.svg",
       "featured": false,
-      "createdAt": "2026-08-01T00:00:00.000Z"
+      "createdAt": "2026-08-01T00:00:00.000Z",
+      "reviews": [],
+      "sold": 0,
+      "images": [
+        "/images/products/placeholder-4.svg"
+      ],
+      "variantImages": {}
     },
     {
       "id": "p5",
@@ -53,7 +77,13 @@
       "description": "Compact GaN charger that fits in a pocket and charges a laptop and phone at once.",
       "image": "/images/products/placeholder-5.svg",
       "featured": false,
-      "createdAt": "2026-08-01T00:00:00.000Z"
+      "createdAt": "2026-08-01T00:00:00.000Z",
+      "reviews": [],
+      "sold": 0,
+      "images": [
+        "/images/products/placeholder-5.svg"
+      ],
+      "variantImages": {}
     },
     {
       "id": "p6",
@@ -64,8 +94,15 @@
       "description": "Pocket-sized speaker with 360-degree sound and IP67 water resistance.",
       "image": "/images/products/placeholder-6.svg",
       "featured": false,
-      "createdAt": "2026-08-01T00:00:00.000Z"
+      "createdAt": "2026-08-01T00:00:00.000Z",
+      "reviews": [],
+      "sold": 0,
+      "images": [
+        "/images/products/placeholder-6.svg"
+      ],
+      "variantImages": {}
     }
   ],
-  "orders": []
+  "orders": [],
+  "slides": []
 }

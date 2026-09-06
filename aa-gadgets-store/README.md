@@ -52,11 +52,17 @@ Then open:
 Go to `/admin.html` and sign in with the username/password from your `.env` file.
 
 From there you can:
-- **Add a product** — click "+ Add product", fill in name, category, price, stock, and a description, then either upload an image file or paste an image URL.
+- **Add a product** — click "+ Add product", fill in name, category, price, stock, and a description, then upload up to 6 photos and/or paste image URLs (one per line).
   - **Options (variants)** — if a product comes in different colors, sizes, etc., type them into the "Options" box, one group per line, like: `Color: Black, White, Blue` and `Size: S, M, L`. Customers will see dropdowns for each on the product page. Leave it blank for simple products with no options. Note: stock is tracked for the whole product, not separately per option.
-- **Edit a product** — click "Edit" next to any row.
+  - **Photo per option** — if you want the product photo to switch when a customer picks a specific option (e.g. a different photo per color), list them in "Photo per option" as `OptionName: image URL`, one per line.
+  - **Sold count** — the Products table shows a running "Sold" total per product. It counts up automatically the moment an order for that product is marked **Delivered** (not just placed), so it reflects completed sales.
+- **Edit a product** — click "Edit" next to any row. When editing photos, check "Add these to the existing photos" if you want to add more without removing the current ones.
 - **Delete a product** — click "Delete" (there's a confirmation before it deletes).
+- **Moderate reviews** — click "Reviews" in the sidebar to see every review left across your whole catalog, with a Delete button for anything inappropriate. Reviews publish immediately when a customer submits them — there's no approval step by default.
+- **Manage the homepage slideshow** — click "Slideshow" in the sidebar to add, edit, reorder, or delete the rotating promotional banners shown at the top of your homepage. Each slide can have a photo, an optional caption, an optional link (e.g. straight to a product or sale page), and a display order.
 - **See and manage orders** — click "Orders" in the sidebar. Each order shows its items (with any chosen options), payment method, and customer/delivery details. Use the **Status** dropdown to move an order through its lifecycle: Order Placed → Processing → Shipped → Out for Delivery → Delivered (or Cancelled). You can also fill in a **Tracking #** if you're using a courier.
+
+Stock automatically goes down by the right amount the moment a customer places an order (whether paid online or Cash on Delivery), so you can't accidentally oversell.
 
 Changes show up on the live storefront immediately — no restart needed.
 
@@ -107,22 +113,26 @@ If you'd like help with a specific host (Railway, Render, etc.), just ask — th
 
 ```
 server.js              Backend: product API, admin auth, PayMongo checkout
-data/db.json            Your product catalog and orders (plain JSON file)
+data/db.json            Your product catalog, orders, and slideshow (plain JSON file)
+data/uploads/           Uploaded product photos and slideshow images (persistent volume)
 public/
-  index.html             Storefront home page
-  product.html           Single product page
+  index.html             Storefront home page (includes the slideshow banner)
+  product.html           Single product page (photo gallery + reviews)
   cart.html              Cart + checkout
   success.html           Order confirmation page
+  track-order.html       Public order-status lookup page
   admin.html             Admin login + dashboard
   css/style.css          All styling (minimalist white theme)
-  js/store.js            Storefront product rendering
+  js/store.js            Storefront product rendering + slideshow
   js/cart.js             Shared cart logic (localStorage)
   js/admin.js            Admin panel logic
-  images/                Logo and product photos
+  images/                Logo and default placeholder photos
 ```
 
 ## Notes on the current setup
 
-- **Storage:** products/orders live in a single JSON file for simplicity. This is fine for a small catalog; if you outgrow it, the product/order logic in `server.js` can be swapped for a real database (Postgres, MongoDB, etc.) without changing the frontend.
+- **Storage:** products, orders, and slideshow data live in a single JSON file for simplicity. This is fine for a small catalog; if you outgrow it, the logic in `server.js` can be swapped for a real database (Postgres, MongoDB, etc.) without changing the frontend.
 - **Security:** admin login is a single shared username/password. For a bigger team, this would be worth upgrading to per-person accounts.
-- **Images:** uploaded product photos are saved to `public/images/products/`. Back this folder up along with `data/db.json` if you move servers.
+- **Images:** uploaded product and slideshow photos are saved to `data/uploads/` — this is set up to live on your host's persistent volume so it survives redeploys. Back up the whole `data/` folder if you move servers.
+- **Reviews:** publish immediately with no approval step. If review spam becomes an issue, the review-submission endpoint in `server.js` is the place to add moderation-before-publish.
+- **Variant stock:** stock is tracked per product, not per individual option combination (e.g., you can't set "5 in Black, 10 in White" separately) — it's one shared stock count for the whole product regardless of which options a customer picks.

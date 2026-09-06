@@ -6,6 +6,25 @@
 <title>A&amp;A Gadgets — Product</title>
 <link rel="icon" href="/images/logo.png">
 <link rel="stylesheet" href="/css/style.css">
+<style>
+  .gallery-thumbs { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+  .gallery-thumbs img {
+    width: 64px; height: 64px; object-fit: cover; background: var(--panel);
+    cursor: pointer; border: 2px solid transparent; transition: border-color 0.15s ease;
+  }
+  .gallery-thumbs img.active { border-color: var(--ink); }
+  .stars { color: var(--ink); font-size: 15px; letter-spacing: 1px; }
+  .stars .empty { color: var(--line); }
+  .review-item { padding: 16px 0; border-bottom: 1px solid var(--line); }
+  .review-item:last-child { border-bottom: none; }
+  .review-name { font-weight: 600; font-size: 14px; }
+  .review-date { color: var(--muted); font-size: 12px; margin-left: 8px; }
+  .review-comment { color: var(--muted); font-size: 14px; margin-top: 6px; }
+  .star-picker { display: flex; gap: 6px; font-size: 24px; cursor: pointer; margin-bottom: 4px; }
+  .star-picker span { color: var(--line); transition: color 0.1s ease; }
+  .star-picker span.selected { color: var(--ink); }
+  .sold-badge { font-size: 12px; color: var(--muted); margin-bottom: 20px; }
+</style>
 </head>
 <body>
 
@@ -32,6 +51,40 @@
   <div id="productDetail" class="product-detail">
     <p style="color:var(--muted)">Loading product…</p>
   </div>
+
+  <div id="reviewsSection" class="container" style="max-width:720px; margin:0 auto 90px; display:none;">
+    <div class="motif-divider" style="margin-bottom:32px;">
+      <span class="rule"></span>
+      <span class="icons">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2l2.5 6.5L21 11l-6.5 2.5L12 20l-2.5-6.5L3 11l6.5-2.5z"/></svg>
+      </span>
+      <span class="rule"></span>
+    </div>
+    <h2 style="font-family:'Archivo',sans-serif; font-size:24px; margin-bottom:6px;">Reviews</h2>
+    <div id="ratingSummary" style="color:var(--muted); margin-bottom:28px;"></div>
+
+    <div class="card" style="margin-bottom:32px;">
+      <h3 style="margin-top:0; font-size:16px;">Write a review</h3>
+      <div class="field" style="margin-bottom:14px;">
+        <label>Your rating</label>
+        <div class="star-picker" id="starPicker">
+          <span data-star="1">★</span><span data-star="2">★</span><span data-star="3">★</span><span data-star="4">★</span><span data-star="5">★</span>
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:14px;">
+        <label for="reviewName">Your name</label>
+        <input type="text" id="reviewName" placeholder="Juan Dela Cruz">
+      </div>
+      <div class="field" style="margin-bottom:16px;">
+        <label for="reviewComment">Your review (optional)</label>
+        <textarea id="reviewComment" placeholder="What did you think?"></textarea>
+      </div>
+      <button class="btn" onclick="submitReview()">Submit review</button>
+      <p class="error-text" id="reviewError">Something went wrong.</p>
+    </div>
+
+    <div id="reviewsList"></div>
+  </div>
 </main>
 
 <footer class="site-footer">
@@ -49,6 +102,8 @@
   let currentQty = 1;
   let siteCurrency = 'usd';
   let selectedVariants = {};
+  let activeImage = '';
+  let selectedRating = 0;
 
   async function loadProduct() {
     const params = new URLSearchParams(window.location.search);
@@ -69,11 +124,44 @@
       return;
     }
     currentProduct = await res.json();
-    // Default each variant group to its first option
     selectedVariants = {};
     (currentProduct.variants || []).forEach((group) => {
       selectedVariants[group.name] = group.options[0];
     });
+    activeImage = (currentProduct.images && currentProduct.images[0]) || currentProduct.image;
+    applyVariantImageIfAny();
+    render();
+    renderReviews();
+  }
+
+  function escapeHTML(str) {
+    const div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+  }
+
+  function applyVariantImageIfAny() {
+    const variantImages = currentProduct.variantImages || {};
+    for (const value of Object.values(selectedVariants)) {
+      if (variantImages[value]) {
+        activeImage = variantImages[value];
+        return;
+      }
+    }
+  }
+
+  function galleryHTML(p) {
+    const images = (p.images && p.images.length > 0) ? p.images : [p.image];
+    if (images.length <= 1) return '';
+    return `
+      <div class="gallery-thumbs">
+        ${images.map((img) => `<img src="${img}" class="${img === activeImage ? 'active' : ''}" onclick="selectImage('${img.replace(/'/g, "\\'")}')" alt="thumbnail">`).join('')}
+      </div>
+    `;
+  }
+
+  function selectImage(img) {
+    activeImage = img;
     render();
   }
 
@@ -89,26 +177,37 @@
     `).join('');
   }
 
-  function escapeHTML(str) {
-    const div = document.createElement('div');
-    div.textContent = str == null ? '' : String(str);
-    return div.innerHTML;
+  function starString(rating) {
+    const rounded = Math.round(rating);
+    return '★'.repeat(rounded) + '☆'.repeat(5 - rounded);
   }
 
   function render() {
     const p = currentProduct;
     const outOfStock = p.stock <= 0;
     document.title = `${p.name} — A&A Gadgets`;
+
+    const reviews = p.reviews || [];
+    const avgRating = reviews.length > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;
+    const ratingLine = reviews.length > 0
+      ? `<div class="stars" style="margin-bottom:14px;">${starString(avgRating)} <span style="color:var(--muted); font-size:13px;">(${reviews.length} review${reviews.length === 1 ? '' : 's'})</span></div>`
+      : '';
+
     document.getElementById('productDetail').innerHTML = `
-      <div class="product-thumb">
-        <img src="${p.image}" alt="${p.name}">
+      <div>
+        <div class="product-thumb">
+          <img src="${activeImage}" alt="${escapeHTML(p.name)}">
+        </div>
+        ${galleryHTML(p)}
       </div>
       <div class="pd-info">
-        <span class="eyebrow">${p.category}</span>
-        <h1>${p.name}</h1>
+        <span class="eyebrow">${escapeHTML(p.category)}</span>
+        <h1>${escapeHTML(p.name)}</h1>
+        ${ratingLine}
         <div class="pd-price">${formatMoney(p.price, siteCurrency)}</div>
-        <p class="pd-desc">${p.description || ''}</p>
-        ${outOfStock ? '<p style="color:var(--danger);font-weight:600;margin-bottom:20px;">Currently sold out</p>' : `<p style="color:var(--muted);font-size:13px;margin-bottom:20px;">${p.stock} in stock</p>`}
+        <p class="pd-desc">${escapeHTML(p.description || '')}</p>
+        ${outOfStock ? '<p style="color:var(--danger);font-weight:600;margin-bottom:20px;">Currently sold out</p>' : `<p style="color:var(--muted);font-size:13px;margin-bottom:8px;">${p.stock} in stock</p>`}
+        ${p.sold > 0 ? `<p class="sold-badge">${p.sold} sold</p>` : ''}
         ${variantPickersHTML(p)}
         <div class="qty-row">
           <div class="qty-control">
@@ -126,6 +225,8 @@
 
   function setVariant(groupName, value) {
     selectedVariants[groupName] = value;
+    applyVariantImageIfAny();
+    render();
   }
 
   function addCurrentToCart() {
@@ -138,6 +239,82 @@
   function changeQty(delta) {
     currentQty = Math.max(1, Math.min(currentProduct.stock || 1, currentQty + delta));
     document.getElementById('qtyValue').textContent = currentQty;
+  }
+
+  // ---------- Reviews ----------
+  document.querySelectorAll('#starPicker span').forEach((star) => {
+    star.addEventListener('click', () => {
+      selectedRating = parseInt(star.dataset.star, 10);
+      document.querySelectorAll('#starPicker span').forEach((s) => {
+        s.classList.toggle('selected', parseInt(s.dataset.star, 10) <= selectedRating);
+      });
+    });
+  });
+
+  function renderReviews() {
+    const section = document.getElementById('reviewsSection');
+    section.style.display = 'block';
+    const reviews = (currentProduct.reviews || []).slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    const summaryEl = document.getElementById('ratingSummary');
+    if (reviews.length === 0) {
+      summaryEl.textContent = 'No reviews yet — be the first to share your thoughts.';
+    } else {
+      const avg = reviews.reduce((s, r) => s + r.rating, 0) / reviews.length;
+      summaryEl.innerHTML = `<span class="stars">${starString(avg)}</span> ${avg.toFixed(1)} out of 5 · ${reviews.length} review${reviews.length === 1 ? '' : 's'}`;
+    }
+
+    document.getElementById('reviewsList').innerHTML = reviews.map((r) => `
+      <div class="review-item">
+        <span class="review-name">${escapeHTML(r.name)}</span>
+        <span class="review-date">${new Date(r.createdAt).toLocaleDateString()}</span>
+        <div class="stars">${starString(r.rating)}</div>
+        ${r.comment ? `<div class="review-comment">${escapeHTML(r.comment)}</div>` : ''}
+      </div>
+    `).join('');
+  }
+
+  async function submitReview() {
+    const name = document.getElementById('reviewName').value.trim();
+    const comment = document.getElementById('reviewComment').value.trim();
+    const errorEl = document.getElementById('reviewError');
+    errorEl.style.display = 'none';
+
+    if (!name) {
+      errorEl.textContent = 'Please enter your name.';
+      errorEl.style.display = 'block';
+      return;
+    }
+    if (selectedRating < 1) {
+      errorEl.textContent = 'Please choose a star rating.';
+      errorEl.style.display = 'block';
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/products/${currentProduct.id}/reviews`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, rating: selectedRating, comment })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        errorEl.textContent = data.error || 'Could not submit review';
+        errorEl.style.display = 'block';
+        return;
+      }
+      currentProduct = data;
+      document.getElementById('reviewName').value = '';
+      document.getElementById('reviewComment').value = '';
+      selectedRating = 0;
+      document.querySelectorAll('#starPicker span').forEach((s) => s.classList.remove('selected'));
+      renderReviews();
+      render();
+      showToast('Thanks for your review!');
+    } catch (e) {
+      errorEl.textContent = 'Network error — please try again';
+      errorEl.style.display = 'block';
+    }
   }
 
   loadProduct();

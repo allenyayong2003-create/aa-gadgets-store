@@ -138,6 +138,32 @@ function variantsToText(variants) {
   return variants.map((v) => `${v.name}: ${v.options.join(', ')}`).join('\n');
 }
 
+// ---------- Variant photo overrides helper ----------
+// Admin can optionally map a specific variant option (e.g. "Black") to a
+// specific photo URL, so the product image swaps when that option is picked.
+// Format, one per line:  OptionValue: https://example.com/black.jpg
+function parseVariantImagesText(text) {
+  if (!text) return {};
+  const map = {};
+  text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .forEach((line) => {
+      const separatorIndex = line.indexOf(':');
+      if (separatorIndex === -1) return;
+      const key = line.slice(0, separatorIndex).trim();
+      const url = line.slice(separatorIndex + 1).trim();
+      if (key && url) map[key] = url;
+    });
+  return map;
+}
+
+function variantImagesToText(map) {
+  if (!map || typeof map !== 'object') return '';
+  return Object.entries(map).map(([k, v]) => `${k}: ${v}`).join('\n');
+}
+
 // ---------- Database (simple JSON file) ----------
 // This whole "data" folder should be mounted as a persistent Volume on Railway
 // (see README) so product/order data and uploaded photos survive every redeploy.
@@ -146,7 +172,25 @@ fs.mkdirSync(dataDir, { recursive: true });
 const dbFile = path.join(dataDir, 'db.json');
 const adapter = new FileSync(dbFile);
 const db = low(adapter);
-db.defaults({ products: [], orders: [] }).write();
+db.defaults({ products: [], orders: [], slides: [] }).write();
+
+// One-time migration: older products created before "reviews", "sold", or
+// "images" existed won't have those fields. Add sensible defaults so every
+// product has a consistent shape going forward.
+db.get('products')
+  .value()
+  .forEach((p) => {
+    const patch = {};
+    if (!Array.isArray(p.reviews)) patch.reviews = [];
+    if (typeof p.sold !== 'number') patch.sold = 0;
+    if (!Array.isArray(p.images) || p.images.length === 0) {
+      patch.images = p.image ? [p.image] : ['/images/products/placeholder-1.svg'];
+    }
+    if (!p.variantImages || typeof p.variantImages !== 'object') patch.variantImages = {};
+    if (Object.keys(patch).length > 0) {
+      db.get('products').find({ id: p.id }).assign(patch).write();
+    }
+  });
 
 // ---------- App setup ----------
 const app = express();
@@ -185,6 +229,7 @@ const upload = multer({
     cb(ok ? null : new Error('Only image files are allowed'), ok);
   }
 });
+const uploadMultiple = upload.array('images', 6); // up to 6 photos per product
 
 
 // ---------- Auth helpers ----------
@@ -203,6 +248,53 @@ app.get('/api/products/:id', (req, res) => {
   const product = db.get('products').find({ id: req.params.id }).value();
   if (!product) return res.status(404).json({ error: 'Product not found' });
   res.json(product);
+});
+
+// ---------- Public: submit a product review ----------
+app.post('/api/products/:id/reviews', (req, res) => {
+  const product = db.get('products').find({ id: req.params.id }).value();
+  if (!product) return res.status(404).json({ error: 'Product not found' });
+
+  const { name, rating, comment } = req.body;
+  const numericRating = parseInt(rating, 10);
+  if (!name || !name.trim()) return res.status(400).json({ error: 'Please enter your name' });
+  if (!numericRating || numericRating < 1 || numericRating > 5) {
+    return res.status(400).json({ error: 'Please choose a rating from 1 to 5 stars' });
+  }
+
+  const review = {
+    id: 'r' + crypto.randomBytes(6).toString('hex'),
+    name: name.trim(),
+    rating: numericRating,
+    comment: (comment || '').trim(),
+    createdAt: new Date().toISOString()
+  };
+
+  const updatedReviews = [...(product.reviews || []), review];
+  db.get('products').find({ id: req.params.id }).assign({ reviews: updatedReviews }).write();
+  const updated = db.get('products').find({ id: req.params.id }).value();
+  res.status(201).json(updated);
+});
+
+// ---------- Admin: view and moderate all reviews ----------
+app.get('/api/admin/reviews', requireAdmin, (req, res) => {
+  const products = db.get('products').value();
+  const allReviews = [];
+  products.forEach((p) => {
+    (p.reviews || []).forEach((r) => {
+      allReviews.push({ ...r, productId: p.id, productName: p.name });
+    });
+  });
+  allReviews.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json(allReviews);
+});
+
+app.delete('/api/admin/products/:productId/reviews/:reviewId', requireAdmin, (req, res) => {
+  const product = db.get('products').find({ id: req.params.productId }).value();
+  if (!product) return res.status(404).json({ error: 'Product not found' });
+  const remainingReviews = (product.reviews || []).filter((r) => r.id !== req.params.reviewId);
+  db.get('products').find({ id: req.params.productId }).assign({ reviews: remainingReviews }).write();
+  res.json({ success: true });
 });
 
 // ---------- Admin auth routes ----------
@@ -224,14 +316,19 @@ app.get('/api/admin/session', (req, res) => {
 });
 
 // ---------- Admin product management ----------
-app.post('/api/admin/products', requireAdmin, upload.single('image'), (req, res) => {
-  const { name, category, price, stock, description, featured, variantsText } = req.body;
+app.post('/api/admin/products', requireAdmin, uploadMultiple, (req, res) => {
+  const { name, category, price, stock, description, featured, variantsText, variantImagesText, imageUrls } = req.body;
   if (!name || !price) return res.status(400).json({ error: 'Name and price are required' });
 
   const id = 'p' + crypto.randomBytes(5).toString('hex');
-  const image = req.file
-    ? `/uploads/${req.file.filename}`
-    : req.body.imageUrl || '/images/products/placeholder-1.svg';
+
+  const uploadedImages = (req.files || []).map((f) => `/uploads/${f.filename}`);
+  const urlImages = (imageUrls || '')
+    .split('\n')
+    .map((u) => u.trim())
+    .filter(Boolean);
+  const images = [...uploadedImages, ...urlImages];
+  if (images.length === 0) images.push('/images/products/placeholder-1.svg');
 
   const product = {
     id,
@@ -240,9 +337,13 @@ app.post('/api/admin/products', requireAdmin, upload.single('image'), (req, res)
     price: parseFloat(price),
     stock: parseInt(stock, 10) || 0,
     description: description || '',
-    image,
+    images,
+    image: images[0], // kept for backward compatibility with older UI bits
+    variantImages: parseVariantImagesText(variantImagesText || ''),
     featured: featured === 'true' || featured === true,
     variants: parseVariantsText(variantsText || ''),
+    reviews: [],
+    sold: 0,
     createdAt: new Date().toISOString()
   };
 
@@ -250,11 +351,11 @@ app.post('/api/admin/products', requireAdmin, upload.single('image'), (req, res)
   res.status(201).json(product);
 });
 
-app.put('/api/admin/products/:id', requireAdmin, upload.single('image'), (req, res) => {
+app.put('/api/admin/products/:id', requireAdmin, uploadMultiple, (req, res) => {
   const product = db.get('products').find({ id: req.params.id }).value();
   if (!product) return res.status(404).json({ error: 'Product not found' });
 
-  const { name, category, price, stock, description, featured, imageUrl, variantsText } = req.body;
+  const { name, category, price, stock, description, featured, variantsText, variantImagesText, imageUrls, keepExistingImages } = req.body;
   const updates = {
     name: name !== undefined ? name : product.name,
     category: category !== undefined ? category : product.category,
@@ -262,14 +363,25 @@ app.put('/api/admin/products/:id', requireAdmin, upload.single('image'), (req, r
     stock: stock !== undefined ? parseInt(stock, 10) : product.stock,
     description: description !== undefined ? description : product.description,
     featured: featured !== undefined ? (featured === 'true' || featured === true) : product.featured,
-    variants: variantsText !== undefined ? parseVariantsText(variantsText) : (product.variants || [])
+    variants: variantsText !== undefined ? parseVariantsText(variantsText) : (product.variants || []),
+    variantImages: variantImagesText !== undefined ? parseVariantImagesText(variantImagesText) : (product.variantImages || {})
   };
 
-  if (req.file) {
-    updates.image = `/uploads/${req.file.filename}`;
-  } else if (imageUrl) {
-    updates.image = imageUrl;
+  const uploadedImages = (req.files || []).map((f) => `/uploads/${f.filename}`);
+  const urlImages = (imageUrls || '')
+    .split('\n')
+    .map((u) => u.trim())
+    .filter(Boolean);
+  const newImages = [...uploadedImages, ...urlImages];
+
+  if (newImages.length > 0) {
+    // New images were provided — either add to or replace the existing gallery,
+    // depending on whether the admin chose to keep the current photos.
+    updates.images = keepExistingImages === 'true' ? [...(product.images || []), ...newImages] : newImages;
+  } else {
+    updates.images = product.images && product.images.length > 0 ? product.images : [product.image].filter(Boolean);
   }
+  updates.image = updates.images[0] || '/images/products/placeholder-1.svg';
 
   db.get('products').find({ id: req.params.id }).assign(updates).write();
   const updated = db.get('products').find({ id: req.params.id }).value();
@@ -288,6 +400,28 @@ app.get('/api/admin/orders', requireAdmin, (req, res) => {
   const orders = db.get('orders').orderBy(['createdAt'], ['desc']).value();
   res.json(orders);
 });
+
+// Reduces stock for each item in an order. Called once, right when an order
+// is placed, so the same items can't be oversold before payment/delivery.
+function decrementStockForOrder(orderItems) {
+  orderItems.forEach((item) => {
+    const product = db.get('products').find({ id: item.id }).value();
+    if (!product) return;
+    const newStock = Math.max(0, (product.stock || 0) - item.quantity);
+    db.get('products').find({ id: item.id }).assign({ stock: newStock }).write();
+  });
+}
+
+// Adds to each product's lifetime "sold" counter. Called once, the moment an
+// order first reaches "Delivered" — reflects completed sales, not just orders placed.
+function incrementSoldForOrder(orderItems) {
+  orderItems.forEach((item) => {
+    const product = db.get('products').find({ id: item.id }).value();
+    if (!product) return;
+    const newSold = (product.sold || 0) + item.quantity;
+    db.get('products').find({ id: item.id }).assign({ sold: newSold }).write();
+  });
+}
 
 // ---------- Checkout (PayMongo — card, GCash, Maya, GrabPay) ----------
 app.post('/api/checkout', async (req, res) => {
@@ -361,6 +495,7 @@ app.post('/api/checkout', async (req, res) => {
       createdAt: new Date().toISOString()
     };
     db.get('orders').push(order).write();
+    decrementStockForOrder(orderItems);
 
     res.json({ url: checkoutSession.data.attributes.checkout_url });
   } catch (err) {
@@ -417,6 +552,7 @@ app.post('/api/checkout/cod', (req, res) => {
       createdAt: new Date().toISOString()
     };
     db.get('orders').push(order).write();
+    decrementStockForOrder(orderItems);
 
     res.json({ orderId });
   } catch (err) {
@@ -490,6 +626,11 @@ app.patch('/api/admin/orders/:id/status', requireAdmin, async (req, res) => {
 
   if (statusIsChanging) {
     notifyCustomerByEmail(updated).catch((e) => console.error('[email] notify promise rejected:', e && e.message));
+
+    // Only count a sale once, the moment an order first reaches "Delivered".
+    if (status === 'Delivered' && previousStatus !== 'Delivered') {
+      incrementSoldForOrder(updated.items);
+    }
   }
 
   res.json(updated);
@@ -516,6 +657,61 @@ app.post('/api/track-order', (req, res) => {
 
 app.get('/api/order-statuses', (req, res) => {
   res.json(ORDER_STATUSES);
+});
+
+// ---------- Homepage slideshow (admin-managed promo banners) ----------
+app.get('/api/slides', (req, res) => {
+  const slides = db.get('slides').orderBy(['order'], ['asc']).value();
+  res.json(slides);
+});
+
+app.get('/api/admin/slides', requireAdmin, (req, res) => {
+  const slides = db.get('slides').orderBy(['order'], ['asc']).value();
+  res.json(slides);
+});
+
+app.post('/api/admin/slides', requireAdmin, upload.single('image'), (req, res) => {
+  const { caption, linkUrl, order, imageUrl } = req.body;
+  const image = req.file ? `/uploads/${req.file.filename}` : (imageUrl || '');
+  if (!image) return res.status(400).json({ error: 'Please upload an image or provide an image URL' });
+
+  const slide = {
+    id: 's' + crypto.randomBytes(5).toString('hex'),
+    image,
+    caption: caption || '',
+    linkUrl: linkUrl || '',
+    order: parseInt(order, 10) || (db.get('slides').value().length + 1),
+    createdAt: new Date().toISOString()
+  };
+  db.get('slides').push(slide).write();
+  res.status(201).json(slide);
+});
+
+app.put('/api/admin/slides/:id', requireAdmin, upload.single('image'), (req, res) => {
+  const slide = db.get('slides').find({ id: req.params.id }).value();
+  if (!slide) return res.status(404).json({ error: 'Slide not found' });
+
+  const { caption, linkUrl, order, imageUrl } = req.body;
+  const updates = {
+    caption: caption !== undefined ? caption : slide.caption,
+    linkUrl: linkUrl !== undefined ? linkUrl : slide.linkUrl,
+    order: order !== undefined ? parseInt(order, 10) : slide.order
+  };
+  if (req.file) {
+    updates.image = `/uploads/${req.file.filename}`;
+  } else if (imageUrl) {
+    updates.image = imageUrl;
+  }
+
+  db.get('slides').find({ id: req.params.id }).assign(updates).write();
+  res.json(db.get('slides').find({ id: req.params.id }).value());
+});
+
+app.delete('/api/admin/slides/:id', requireAdmin, (req, res) => {
+  const slide = db.get('slides').find({ id: req.params.id }).value();
+  if (!slide) return res.status(404).json({ error: 'Slide not found' });
+  db.get('slides').remove({ id: req.params.id }).write();
+  res.json({ success: true });
 });
 
 app.get('/api/config', (req, res) => {

@@ -38,6 +38,8 @@
     <nav class="admin-nav">
       <a href="#" data-view="products" class="active">Products</a>
       <a href="#" data-view="orders">Orders</a>
+      <a href="#" data-view="reviews">Reviews</a>
+      <a href="#" data-view="slideshow">Slideshow</a>
       <a href="/" target="_blank">View store ↗</a>
     </nav>
     <div style="margin-top:40px;">
@@ -96,17 +98,27 @@
             </div>
             <div class="field full">
               <label for="pVariants">Options (optional — e.g. color, size)</label>
-              <textarea id="pVariants" placeholder="Color: Black, White, Blue&#10;Size: S, M, L" style="min-height:80px;"></textarea>
-              <p style="font-size:12px;color:var(--muted);margin:2px 0 0;">One option group per line, formatted as: <strong>Name: choice 1, choice 2, choice 3</strong>. Leave blank if this product has no variants. Note: stock is tracked for the whole product, not per option.</p>
+              <textarea id="pVariants" placeholder="Color: Black, White, Blue&#10;Size: S, M, L" style="min-height:70px;"></textarea>
+              <p style="font-size:12px;color:var(--muted);margin:2px 0 0;">One option group per line: <strong>Name: choice 1, choice 2, choice 3</strong>. Leave blank if this product has no variants. Stock is tracked for the whole product, not per option.</p>
             </div>
-            <div class="field">
-              <label for="pImageFile">Product image (upload)</label>
-              <input type="file" id="pImageFile" accept="image/*">
+            <div class="field full">
+              <label for="pVariantImages">Photo per option (optional)</label>
+              <textarea id="pVariantImages" placeholder="Black: https://…/black.jpg&#10;White: https://…/white.jpg" style="min-height:70px;"></textarea>
+              <p style="font-size:12px;color:var(--muted);margin:2px 0 0;">If a customer picks an option listed here (like a color), the product photo will switch to match. Format: <strong>Option: image URL</strong> — one per line.</p>
             </div>
-            <div class="field">
-              <label for="pImageUrl">Or image URL</label>
-              <input type="text" id="pImageUrl" placeholder="https://…">
+            <div class="field full">
+              <label for="pImageFiles">Product photos (upload, up to 6)</label>
+              <input type="file" id="pImageFiles" accept="image/*" multiple>
             </div>
+            <div class="field full">
+              <label for="pImageUrls">Or image URLs (one per line)</label>
+              <textarea id="pImageUrls" placeholder="https://…/photo1.jpg&#10;https://…/photo2.jpg" style="min-height:60px;"></textarea>
+            </div>
+            <div class="field field-checkbox full" id="keepImagesRow" style="display:none;">
+              <input type="checkbox" id="pKeepImages">
+              <label for="pKeepImages" style="text-transform:none;font-size:14px;">Add these to the existing photos instead of replacing them</label>
+            </div>
+            <div class="field full" id="currentImagesPreview"></div>
             <div class="field field-checkbox full">
               <input type="checkbox" id="pFeatured">
               <label for="pFeatured" style="text-transform:none;font-size:14px;">Show in Featured section</label>
@@ -130,12 +142,13 @@
               <th>Options</th>
               <th>Price</th>
               <th>Stock</th>
+              <th>Sold</th>
               <th>Featured</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="productTableBody">
-            <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">Loading products…</td></tr>
+            <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:32px;">Loading products…</td></tr>
           </tbody>
         </table>
       </div>
@@ -144,7 +157,7 @@
     <!-- Orders view -->
     <section id="view-orders" style="display:none;">
       <div class="admin-header"><h1>Orders</h1></div>
-      <div class="card" style="padding:0;">
+      <div class="card" style="padding:0; overflow-x:auto;">
         <table class="admin-table">
           <thead>
             <tr>
@@ -160,6 +173,88 @@
           </thead>
           <tbody id="orderTableBody">
             <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">Loading orders…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Reviews view -->
+    <section id="view-reviews" style="display:none;">
+      <div class="admin-header"><h1>Reviews</h1></div>
+      <div class="card" style="padding:0;">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Rating</th>
+              <th>Name</th>
+              <th>Comment</th>
+              <th>Date</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="reviewTableBody">
+            <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:32px;">Loading reviews…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Slideshow view -->
+    <section id="view-slideshow" style="display:none;">
+      <div class="admin-header">
+        <h1>Homepage Slideshow</h1>
+        <button class="btn" id="newSlideBtn">+ Add slide</button>
+      </div>
+      <p style="color:var(--muted); font-size:14px; margin-top:-16px; margin-bottom:24px;">These images rotate automatically at the top of your homepage.</p>
+
+      <div class="card" id="slideFormCard" style="display:none;">
+        <h3 id="slideFormTitle" style="margin-top:0; font-size:16px;">Add slide</h3>
+        <form id="slideForm">
+          <input type="hidden" id="slideId">
+          <div class="form-grid">
+            <div class="field full">
+              <label for="slideImageFile">Banner image (upload)</label>
+              <input type="file" id="slideImageFile" accept="image/*">
+            </div>
+            <div class="field full">
+              <label for="slideImageUrl">Or image URL</label>
+              <input type="text" id="slideImageUrl" placeholder="https://…">
+            </div>
+            <div class="field">
+              <label for="slideCaption">Caption (optional)</label>
+              <input type="text" id="slideCaption" placeholder="e.g. Summer Sale — 20% off">
+            </div>
+            <div class="field">
+              <label for="slideLink">Link when clicked (optional)</label>
+              <input type="text" id="slideLink" placeholder="/product.html?id=...">
+            </div>
+            <div class="field">
+              <label for="slideOrder">Display order</label>
+              <input type="number" id="slideOrder" step="1" min="1" value="1">
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;margin-top:20px;">
+            <button type="submit" class="btn">Save slide</button>
+            <button type="button" class="btn btn-outline" id="cancelSlideBtn">Cancel</button>
+          </div>
+          <p class="error-text" id="slideFormError">Something went wrong saving this slide.</p>
+        </form>
+      </div>
+
+      <div class="card" style="padding:0;">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Caption</th>
+              <th>Link</th>
+              <th>Order</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="slideTableBody">
+            <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px;">Loading slides…</td></tr>
           </tbody>
         </table>
       </div>

@@ -83,3 +83,48 @@ function escapeHTML(str) {
 if (document.getElementById('featuredGrid') || document.getElementById('allGrid')) {
   loadProducts();
 }
+
+// ---------- Homepage slideshow ----------
+let slideshowIndex = 0;
+let slideshowTimer = null;
+let slideshowSlides = [];
+
+async function loadSlideshow() {
+  const section = document.getElementById('slideshowSection');
+  if (!section) return;
+  try {
+    const res = await fetch('/api/slides');
+    slideshowSlides = await res.json();
+  } catch (e) {
+    slideshowSlides = [];
+  }
+  if (!slideshowSlides || slideshowSlides.length === 0) return;
+
+  section.style.display = 'block';
+  const track = document.getElementById('slideshowTrack');
+  const dots = document.getElementById('slideshowDots');
+
+  track.innerHTML = slideshowSlides.map((s) => `
+    <div class="slideshow-slide">
+      ${s.linkUrl ? `<a href="${s.linkUrl}">` : ''}
+      <img src="${s.image}" alt="${escapeHTML(s.caption || 'Promotion')}">
+      ${s.caption ? `<div class="caption">${escapeHTML(s.caption)}</div>` : ''}
+      ${s.linkUrl ? `</a>` : ''}
+    </div>
+  `).join('');
+
+  dots.innerHTML = slideshowSlides.map((_, i) => `<span class="dot ${i === 0 ? 'active' : ''}" onclick="goToSlide(${i})"></span>`).join('');
+
+  if (slideshowSlides.length > 1) {
+    slideshowTimer = setInterval(() => goToSlide((slideshowIndex + 1) % slideshowSlides.length), 5000);
+  }
+}
+
+function goToSlide(index) {
+  slideshowIndex = index;
+  const track = document.getElementById('slideshowTrack');
+  track.style.transform = `translateX(-${index * 100}%)`;
+  document.querySelectorAll('#slideshowDots .dot').forEach((d, i) => d.classList.toggle('active', i === index));
+}
+
+loadSlideshow();

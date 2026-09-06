@@ -69,7 +69,11 @@ document.querySelectorAll('.admin-nav a[data-view]').forEach((link) => {
     const view = link.dataset.view;
     document.getElementById('view-products').style.display = view === 'products' ? 'block' : 'none';
     document.getElementById('view-orders').style.display = view === 'orders' ? 'block' : 'none';
+    document.getElementById('view-reviews').style.display = view === 'reviews' ? 'block' : 'none';
+    document.getElementById('view-slideshow').style.display = view === 'slideshow' ? 'block' : 'none';
     if (view === 'orders') loadOrders();
+    if (view === 'reviews') loadReviews();
+    if (view === 'slideshow') loadSlides();
   });
 });
 
@@ -92,16 +96,17 @@ function renderStats() {
 function renderProductTable() {
   const body = document.getElementById('productTableBody');
   if (ADMIN_PRODUCTS.length === 0) {
-    body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">No products yet — add your first one above.</td></tr>';
+    body.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:32px;">No products yet — add your first one above.</td></tr>';
     return;
   }
   body.innerHTML = ADMIN_PRODUCTS.map((p) => {
     const variantsSummary = (p.variants || []).length
       ? p.variants.map((v) => `${v.name} (${v.options.length})`).join(', ')
       : '—';
+    const thumb = (p.images && p.images[0]) || p.image;
     return `
     <tr>
-      <td><img class="admin-thumb" src="${p.image}" alt="${escapeAttr(p.name)}"></td>
+      <td><img class="admin-thumb" src="${thumb}" alt="${escapeAttr(p.name)}"></td>
       <td>${escapeAttr(p.name)}</td>
       <td>${escapeAttr(p.category)}</td>
       <td style="font-size:12px;color:var(--muted);">${escapeAttr(variantsSummary)}</td>
@@ -113,6 +118,7 @@ function renderProductTable() {
             ? `<span class="badge badge-low">${p.stock} left</span>`
             : `${p.stock}`}
       </td>
+      <td>${p.sold || 0}</td>
       <td>${p.featured ? '✓' : '—'}</td>
       <td>
         <div class="row-actions">
@@ -140,6 +146,8 @@ document.getElementById('newProductBtn').addEventListener('click', () => {
   document.getElementById('productId').value = '';
   document.getElementById('formTitle').textContent = 'Add product';
   document.getElementById('formError').style.display = 'none';
+  document.getElementById('keepImagesRow').style.display = 'none';
+  document.getElementById('currentImagesPreview').innerHTML = '';
   formCard.style.display = 'block';
   formCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
@@ -158,11 +166,24 @@ function editProduct(id) {
   document.getElementById('pStock').value = p.stock;
   document.getElementById('pDescription').value = p.description || '';
   document.getElementById('pVariants').value = (p.variants || []).map((v) => `${v.name}: ${v.options.join(', ')}`).join('\n');
-  document.getElementById('pImageUrl').value = p.image.startsWith('http') ? p.image : '';
-  document.getElementById('pImageFile').value = '';
+  document.getElementById('pVariantImages').value = Object.entries(p.variantImages || {}).map(([k, v]) => `${k}: ${v}`).join('\n');
+  document.getElementById('pImageFiles').value = '';
+  document.getElementById('pImageUrls').value = '';
   document.getElementById('pFeatured').checked = !!p.featured;
   document.getElementById('formTitle').textContent = `Edit ${p.name}`;
   document.getElementById('formError').style.display = 'none';
+
+  const images = (p.images && p.images.length > 0) ? p.images : [p.image];
+  document.getElementById('keepImagesRow').style.display = 'flex';
+  document.getElementById('pKeepImages').checked = false;
+  document.getElementById('currentImagesPreview').innerHTML = `
+    <label>Current photos</label>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">
+      ${images.map((img) => `<img src="${img}" style="width:56px;height:56px;object-fit:cover;background:var(--panel);border:1px solid var(--line);">`).join('')}
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin:6px 0 0;">Uploading new photos below will replace these, unless you check the box to add to them instead.</p>
+  `;
+
   formCard.style.display = 'block';
   formCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -177,13 +198,13 @@ productForm.addEventListener('submit', async (e) => {
   formData.append('stock', document.getElementById('pStock').value);
   formData.append('description', document.getElementById('pDescription').value.trim());
   formData.append('variantsText', document.getElementById('pVariants').value);
+  formData.append('variantImagesText', document.getElementById('pVariantImages').value);
   formData.append('featured', document.getElementById('pFeatured').checked);
+  formData.append('imageUrls', document.getElementById('pImageUrls').value);
+  formData.append('keepExistingImages', document.getElementById('pKeepImages') && document.getElementById('pKeepImages').checked);
 
-  const imageUrl = document.getElementById('pImageUrl').value.trim();
-  if (imageUrl) formData.append('imageUrl', imageUrl);
-
-  const fileInput = document.getElementById('pImageFile');
-  if (fileInput.files[0]) formData.append('image', fileInput.files[0]);
+  const fileInput = document.getElementById('pImageFiles');
+  Array.from(fileInput.files).forEach((file) => formData.append('images', file));
 
   const url = id ? `/api/admin/products/${id}` : '/api/admin/products';
   const method = id ? 'PUT' : 'POST';
@@ -293,3 +314,142 @@ async function updateTrackingNumber(orderId, trackingNumber) {
 }
 
 boot();
+
+// ---------- Reviews (moderation) ----------
+async function loadReviews() {
+  const res = await fetch('/api/admin/reviews');
+  const body = document.getElementById('reviewTableBody');
+  if (!res.ok) {
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:32px;">Could not load reviews.</td></tr>';
+    return;
+  }
+  const reviews = await res.json();
+  if (reviews.length === 0) {
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:32px;">No reviews yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = reviews.map((r) => `
+    <tr>
+      <td>${escapeAttr(r.productName)}</td>
+      <td>${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</td>
+      <td>${escapeAttr(r.name)}</td>
+      <td style="max-width:260px;">${escapeAttr(r.comment || '—')}</td>
+      <td>${new Date(r.createdAt).toLocaleDateString()}</td>
+      <td><button class="btn btn-small btn-danger" onclick="deleteReview('${r.productId}', '${r.id}')">Delete</button></td>
+    </tr>
+  `).join('');
+}
+
+async function deleteReview(productId, reviewId) {
+  if (!confirm('Delete this review? This can\'t be undone.')) return;
+  const res = await fetch(`/api/admin/products/${productId}/reviews/${reviewId}`, { method: 'DELETE' });
+  if (res.ok) {
+    showToast('Review deleted');
+    loadReviews();
+  } else {
+    showToast('Could not delete review');
+  }
+}
+
+// ---------- Slideshow ----------
+let ADMIN_SLIDES = [];
+const slideFormCard = document.getElementById('slideFormCard');
+const slideForm = document.getElementById('slideForm');
+
+async function loadSlides() {
+  const res = await fetch('/api/admin/slides');
+  const body = document.getElementById('slideTableBody');
+  if (!res.ok) {
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px;">Could not load slides.</td></tr>';
+    return;
+  }
+  ADMIN_SLIDES = await res.json();
+  if (ADMIN_SLIDES.length === 0) {
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px;">No slides yet — add your first banner above.</td></tr>';
+    return;
+  }
+  body.innerHTML = ADMIN_SLIDES.map((s) => `
+    <tr>
+      <td><img class="admin-thumb" src="${s.image}" alt="slide"></td>
+      <td>${escapeAttr(s.caption || '—')}</td>
+      <td style="font-size:12px;color:var(--muted);">${escapeAttr(s.linkUrl || '—')}</td>
+      <td>${s.order}</td>
+      <td>
+        <div class="row-actions">
+          <button class="btn btn-small btn-outline" onclick="editSlide('${s.id}')">Edit</button>
+          <button class="btn btn-small btn-danger" onclick="deleteSlide('${s.id}')">Delete</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+document.getElementById('newSlideBtn').addEventListener('click', () => {
+  slideForm.reset();
+  document.getElementById('slideId').value = '';
+  document.getElementById('slideFormTitle').textContent = 'Add slide';
+  document.getElementById('slideFormError').style.display = 'none';
+  slideFormCard.style.display = 'block';
+  slideFormCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
+document.getElementById('cancelSlideBtn').addEventListener('click', () => {
+  slideFormCard.style.display = 'none';
+});
+
+function editSlide(id) {
+  const s = ADMIN_SLIDES.find((x) => x.id === id);
+  if (!s) return;
+  document.getElementById('slideId').value = s.id;
+  document.getElementById('slideCaption').value = s.caption || '';
+  document.getElementById('slideLink').value = s.linkUrl || '';
+  document.getElementById('slideOrder').value = s.order || 1;
+  document.getElementById('slideImageUrl').value = s.image.startsWith('http') ? s.image : '';
+  document.getElementById('slideImageFile').value = '';
+  document.getElementById('slideFormTitle').textContent = 'Edit slide';
+  document.getElementById('slideFormError').style.display = 'none';
+  slideFormCard.style.display = 'block';
+  slideFormCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+slideForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const id = document.getElementById('slideId').value;
+  const formData = new FormData();
+  formData.append('caption', document.getElementById('slideCaption').value.trim());
+  formData.append('linkUrl', document.getElementById('slideLink').value.trim());
+  formData.append('order', document.getElementById('slideOrder').value);
+
+  const imageUrl = document.getElementById('slideImageUrl').value.trim();
+  if (imageUrl) formData.append('imageUrl', imageUrl);
+
+  const fileInput = document.getElementById('slideImageFile');
+  if (fileInput.files[0]) formData.append('image', fileInput.files[0]);
+
+  const url = id ? `/api/admin/slides/${id}` : '/api/admin/slides';
+  const method = id ? 'PUT' : 'POST';
+
+  const res = await fetch(url, { method, body: formData });
+  const errorEl = document.getElementById('slideFormError');
+
+  if (res.ok) {
+    slideFormCard.style.display = 'none';
+    showToast(id ? 'Slide updated' : 'Slide added');
+    loadSlides();
+  } else {
+    const data = await res.json().catch(() => ({}));
+    errorEl.textContent = data.error || 'Something went wrong saving this slide.';
+    errorEl.style.display = 'block';
+  }
+});
+
+async function deleteSlide(id) {
+  if (!confirm('Delete this slide?')) return;
+  const res = await fetch(`/api/admin/slides/${id}`, { method: 'DELETE' });
+  if (res.ok) {
+    showToast('Slide deleted');
+    loadSlides();
+  } else {
+    showToast('Could not delete slide');
+  }
+}
