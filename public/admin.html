@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — A&amp;A Gadgets</title>
+<link rel="icon" href="/images/logo.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<!-- Login screen -->
+<div class="login-shell" id="loginShell">
+  <div class="login-box">
+    <img src="/images/logo.png" alt="A&A Gadgets" style="display:block;margin:0 auto 20px;">
+    <h1>Admin sign in</h1>
+    <form id="loginForm">
+      <div class="field" style="margin-bottom:16px;">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" autocomplete="username" required>
+      </div>
+      <div class="field" style="margin-bottom:8px;">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+      </div>
+      <p class="error-text" id="loginError">Incorrect username or password.</p>
+      <button type="submit" class="btn btn-block" style="margin-top:20px;">Sign in</button>
+    </form>
+  </div>
+</div>
+
+<!-- Admin dashboard -->
+<div class="admin-shell" id="adminShell" style="display:none;">
+  <aside class="admin-sidebar">
+    <div class="brand">
+      <img src="/images/logo.png" alt="A&A Gadgets">
+    </div>
+    <nav class="admin-nav">
+      <a href="#" data-view="products" class="active">Products</a>
+      <a href="#" data-view="orders">Orders</a>
+      <a href="#" data-view="reviews">Reviews</a>
+      <a href="#" data-view="slideshow">Slideshow</a>
+      <a href="#" data-view="vouchers">Vouchers</a>
+      <a href="#" data-view="shipping">Shipping</a>
+      <a href="/" target="_blank">View store ↗</a>
+    </nav>
+    <div style="margin-top:40px;">
+      <button class="btn btn-outline btn-block" id="logoutBtn">Log out</button>
+    </div>
+  </aside>
+
+  <main class="admin-main">
+    <!-- Products view -->
+    <section id="view-products">
+      <div class="admin-header">
+        <h1>Products</h1>
+        <button class="btn" id="newProductBtn">+ Add product</button>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card">
+          <span class="eyebrow">Total products</span>
+          <div class="stat-value" id="statTotal">—</div>
+        </div>
+        <div class="stat-card">
+          <span class="eyebrow">Low / out of stock</span>
+          <div class="stat-value" id="statLowStock">—</div>
+        </div>
+        <div class="stat-card">
+          <span class="eyebrow">Catalog value</span>
+          <div class="stat-value" id="statValue">—</div>
+        </div>
+      </div>
+
+      <!-- Add/edit form (hidden until needed) -->
+      <div class="card" id="productFormCard" style="display:none;">
+        <h3 id="formTitle" style="font-family:'Archivo',sans-serif;margin-top:0;">Add product</h3>
+        <form id="productForm">
+          <input type="hidden" id="productId">
+          <div class="form-grid">
+            <div class="field">
+              <label for="pName">Name</label>
+              <input type="text" id="pName" required>
+            </div>
+            <div class="field">
+              <label for="pCategory">Category</label>
+              <input type="text" id="pCategory" placeholder="e.g. Audio" required>
+            </div>
+            <div class="field">
+              <label for="pPrice">Price</label>
+              <input type="number" id="pPrice" step="0.01" min="0" required>
+            </div>
+            <div class="field">
+              <label for="pStock">Stock quantity</label>
+              <input type="number" id="pStock" step="1" min="0" required>
+            </div>
+            <div class="field full">
+              <label for="pDescription">Description</label>
+              <textarea id="pDescription" placeholder="A short, honest description customers will actually read."></textarea>
+            </div>
+            <div class="field full">
+              <label for="pWarranty">Warranty (optional)</label>
+              <input type="text" id="pWarranty" placeholder="e.g. 1 Year Warranty, 7-day replacement">
+            </div>
+            <div class="field full">
+              <label for="pVariants">Options (optional — e.g. color, size)</label>
+              <textarea id="pVariants" placeholder="Color: Black, White, Blue&#10;Size: S, M, L" style="min-height:70px;"></textarea>
+              <p style="font-size:12px;color:var(--muted);margin:2px 0 0;">One option group per line: <strong>Name: choice 1, choice 2, choice 3</strong>. Leave blank if this product has no variants. Stock is tracked for the whole product, not per option.</p>
+            </div>
+            <div class="field full">
+              <label for="pVariantImagesContainer">Photo per option (optional)</label>
+              <p style="font-size:12px;color:var(--muted);margin:0 0 8px;">If you want the product photo to switch when a customer picks a specific option (like a color), upload a photo for it here. Type your Options above first — a upload box will appear for each choice.</p>
+              <div id="pVariantImagesContainer" style="display:flex; flex-wrap:wrap; gap:14px;"></div>
+            </div>
+            <div class="field full">
+              <label for="pImageFiles">Product photos (upload, up to 6)</label>
+              <input type="file" id="pImageFiles" accept="image/*" multiple>
+            </div>
+            <div class="field field-checkbox full" id="keepImagesRow" style="display:none;">
+              <input type="checkbox" id="pKeepImages">
+              <label for="pKeepImages" style="text-transform:none;font-size:14px;">Add these to the existing photos instead of replacing them</label>
+            </div>
+            <div class="field full" id="currentImagesPreview"></div>
+            <div class="field field-checkbox full">
+              <input type="checkbox" id="pFeatured">
+              <label for="pFeatured" style="text-transform:none;font-size:14px;">Show in Featured section</label>
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;margin-top:24px;">
+            <button type="submit" class="btn">Save product</button>
+            <button type="button" class="btn btn-outline" id="cancelFormBtn">Cancel</button>
+          </div>
+          <p class="error-text" id="formError">Something went wrong saving this product.</p>
+        </form>
+      </div>
+
+      <div class="card" style="padding:0;">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Name</th>
+              <th>Category</th>
+              <th>Options</th>
+              <th>Price</th>
+              <th>Stock</th>
+              <th>Sold</th>
+              <th>Featured</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="productTableBody">
+            <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:32px;">Loading products…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Orders view -->
+    <section id="view-orders" style="display:none;">
+      <div class="admin-header"><h1>Orders</h1></div>
+      <div class="card" style="padding:0; overflow-x:auto;">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Order</th>
+              <th>Items</th>
+              <th>Total</th>
+              <th>Payment</th>
+              <th>Customer</th>
+              <th>Status</th>
+              <th>Tracking #</th>
+              <th>Placed</th>
+            </tr>
+          </thead>
+          <tbody id="orderTableBody">
+            <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">Loading orders…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Reviews view -->
+    <section id="view-reviews" style="display:none;">
+      <div class="admin-header"><h1>Reviews</h1></div>
+      <div class="card" style="padding:0;">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Rating</th>
+              <th>Name</th>
+              <th>Comment</th>
+              <th>Date</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="reviewTableBody">
+            <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:32px;">Loading reviews…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Slideshow view -->
+    <section id="view-slideshow" style="display:none;">
+      <div class="admin-header">
+        <h1>Homepage Slideshow</h1>
+        <button class="btn" id="newSlideBtn">+ Add slide</button>
+      </div>
+      <p style="color:var(--muted); font-size:14px; margin-top:-16px; margin-bottom:24px;">These images rotate automatically at the top of your homepage.</p>
+
+      <div class="card" id="slideFormCard" style="display:none;">
+        <h3 id="slideFormTitle" style="margin-top:0; font-size:16px;">Add slide</h3>
+        <form id="slideForm">
+          <input type="hidden" id="slideId">
+          <div class="form-grid">
+            <div class="field full">
+              <label for="slideImageFile">Banner image (upload)</label>
+              <input type="file" id="slideImageFile" accept="image/*">
+            </div>
+            <div class="field">
+              <label for="slideCaption">Caption (optional)</label>
+              <input type="text" id="slideCaption" placeholder="e.g. Summer Sale — 20% off">
+            </div>
+            <div class="field">
+              <label for="slideLink">Link when clicked (optional)</label>
+              <input type="text" id="slideLink" placeholder="/product.html?id=...">
+            </div>
+            <div class="field">
+              <label for="slideOrder">Display order</label>
+              <input type="number" id="slideOrder" step="1" min="1" value="1">
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;margin-top:20px;">
+            <button type="submit" class="btn">Save slide</button>
+            <button type="button" class="btn btn-outline" id="cancelSlideBtn">Cancel</button>
+          </div>
+          <p class="error-text" id="slideFormError">Something went wrong saving this slide.</p>
+        </form>
+      </div>
+
+      <div class="card" style="padding:0;">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Caption</th>
+              <th>Link</th>
+              <th>Order</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="slideTableBody">
+            <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px;">Loading slides…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Vouchers view -->
+    <section id="view-vouchers" style="display:none;">
+      <div class="admin-header">
+        <h1>Vouchers</h1>
+        <button class="btn" id="newVoucherBtn">+ Add voucher</button>
+      </div>
+
+      <div class="card" id="voucherFormCard" style="display:none;">
+        <h3 id="voucherFormTitle" style="margin-top:0; font-size:16px;">Add voucher</h3>
+        <form id="voucherForm">
+          <input type="hidden" id="voucherId">
+          <div class="form-grid">
+            <div class="field">
+              <label for="voucherCode">Code</label>
+              <input type="text" id="voucherCode" placeholder="e.g. SAVE10" required>
+            </div>
+            <div class="field">
+              <label for="voucherType">Discount type</label>
+              <select id="voucherType">
+                <option value="percent">Percentage off</option>
+                <option value="fixed">Fixed amount off</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="voucherValue">Value</label>
+              <input type="number" id="voucherValue" step="0.01" min="0" placeholder="e.g. 10 for 10% or ₱10 off" required>
+            </div>
+            <div class="field">
+              <label for="voucherMinOrder">Minimum order (optional)</label>
+              <input type="number" id="voucherMinOrder" step="0.01" min="0" placeholder="0">
+            </div>
+            <div class="field">
+              <label for="voucherMaxUses">Usage limit (optional)</label>
+              <input type="number" id="voucherMaxUses" step="1" min="1" placeholder="Unlimited">
+            </div>
+            <div class="field">
+              <label for="voucherExpiresAt">Expires on (optional)</label>
+              <input type="date" id="voucherExpiresAt">
+            </div>
+            <div class="field field-checkbox full">
+              <input type="checkbox" id="voucherActive" checked>
+              <label for="voucherActive" style="text-transform:none;font-size:14px;">Active</label>
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;margin-top:20px;">
+            <button type="submit" class="btn">Save voucher</button>
+            <button type="button" class="btn btn-outline" id="cancelVoucherBtn">Cancel</button>
+          </div>
+          <p class="error-text" id="voucherFormError">Something went wrong saving this voucher.</p>
+        </form>
+      </div>
+
+      <div class="card" style="padding:0;">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Discount</th>
+              <th>Min order</th>
+              <th>Used</th>
+              <th>Expires</th>
+              <th>Active</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="voucherTableBody">
+            <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">Loading vouchers…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Shipping view -->
+    <section id="view-shipping" style="display:none;">
+      <div class="admin-header">
+        <h1>Shipping Methods</h1>
+        <button class="btn" id="newShippingBtn">+ Add method</button>
+      </div>
+      <p style="color:var(--muted); font-size:14px; margin-top:-16px; margin-bottom:24px;">Customers pick one of these at checkout. If none are active, checkout defaults to free standard shipping.</p>
+
+      <div class="card" id="shippingFormCard" style="display:none;">
+        <h3 id="shippingFormTitle" style="margin-top:0; font-size:16px;">Add shipping method</h3>
+        <form id="shippingForm">
+          <input type="hidden" id="shippingId">
+          <div class="form-grid">
+            <div class="field">
+              <label for="shippingName">Name</label>
+              <input type="text" id="shippingName" placeholder="e.g. Standard, Express" required>
+            </div>
+            <div class="field">
+              <label for="shippingFee">Fee</label>
+              <input type="number" id="shippingFee" step="0.01" min="0" required>
+            </div>
+            <div class="field">
+              <label for="shippingDaysMin">Estimated days (min)</label>
+              <input type="number" id="shippingDaysMin" step="1" min="1" value="3" required>
+            </div>
+            <div class="field">
+              <label for="shippingDaysMax">Estimated days (max)</label>
+              <input type="number" id="shippingDaysMax" step="1" min="1" value="5" required>
+            </div>
+            <div class="field field-checkbox full">
+              <input type="checkbox" id="shippingActive" checked>
+              <label for="shippingActive" style="text-transform:none;font-size:14px;">Active (visible to customers)</label>
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;margin-top:20px;">
+            <button type="submit" class="btn">Save method</button>
+            <button type="button" class="btn btn-outline" id="cancelShippingBtn">Cancel</button>
+          </div>
+          <p class="error-text" id="shippingFormError">Something went wrong saving this shipping method.</p>
+        </form>
+      </div>
+
+      <div class="card" style="padding:0;">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Fee</th>
+              <th>Estimated delivery</th>
+              <th>Active</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="shippingTableBody">
+            <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px;">Loading shipping methods…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="/js/cart.js"></script>
+<script src="/js/admin.js"></script>
+</body>
+</html>
